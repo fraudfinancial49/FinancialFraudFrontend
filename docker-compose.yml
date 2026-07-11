@@ -1,0 +1,39 @@
+version: "3.9"
+
+# The Phase 4 FastAPI backend is deployed on Render at:
+#   https://financialfraudbackend.onrender.com
+# The frontend talks to it directly (see nginx.conf / vite.config.ts /
+# src/api/client.ts), so no local backend container is required. The
+# service below is kept, commented out, for anyone who prefers to run the
+# backend locally instead of hitting the deployed Render instance.
+services:
+  # backend:
+  #   build:
+  #     context: ../backend
+  #     dockerfile: Dockerfile
+  #   container_name: fraud_admin_backend
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+  #     - DATABASE_URL=${DATABASE_URL:-sqlite:///./fraud_admin.db}
+  #   restart: unless-stopped
+  #   networks:
+  #     - fraud_net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: https://financialfraudbackend.onrender.com
+    container_name: fraud_admin_frontend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    networks:
+      - fraud_net
+
+networks:
+  fraud_net:
+    driver: bridge

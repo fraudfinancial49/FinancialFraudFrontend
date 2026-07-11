@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background-color: #05070d;
+  background-image:
+    radial-gradient(circle at 15% 0%, rgba(91, 109, 248, 0.08), transparent 40%),
+    radial-gradient(circle at 85% 100%, rgba(18, 179, 168, 0.08), transparent 40%);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0e1a;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3660;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3d4d85;
+}
+
+@layer components {
+  .panel {
+    @apply bg-vault-900/80 border border-vault-700/60 rounded-xl shadow-panel backdrop-blur-sm;
+  }
+  .panel-header {
+    @apply flex items-center justify-between px-5 py-4 border-b border-vault-700/60;
+  }
+  .btn-primary {
+    @apply inline-flex items-center gap-2 rounded-lg bg-accent-indigo px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 rounded-lg border border-vault-600 bg-vault-800 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-vault-700 disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-danger {
+    @apply inline-flex items-center gap-2 rounded-lg bg-risk-high/90 px-4 py-2 text-sm font-medium text-white transition hover:bg-risk-high disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-success {
+    @apply inline-flex items-center gap-2 rounded-lg bg-risk-low/90 px-4 py-2 text-sm font-medium text-vault-950 transition hover:bg-risk-low disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .input-field {
+    @apply w-full rounded-lg border border-vault-600 bg-vault-850 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-accent-indigo focus:ring-1 focus:ring-accent-indigo;
+  }
+  .field-label {
+    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .kpi-card {
+    @apply panel flex flex-col gap-1 p-5;
+  }
+  .nav-link {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition hover:bg-vault-800 hover:text-slate-100;
+  }
+  .nav-link-active {
+    @apply bg-vault-800 text-slate-50;
+  }
+}
