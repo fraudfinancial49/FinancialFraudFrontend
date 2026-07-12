@@ -8,17 +8,20 @@ import type {
   VaultCaseRecord,
   VaultDecision,
 } from "@/types/api";
-
+ 
 // ---------------------------------------------------------------------------
-// Phase 4 exposes no GET list endpoints for transactions, vault cases, or
-// attacker profiles — only action endpoints (/assess, /vault/*,
-// /admin/run-attacker-profiling) that return a single result each call.
-// This store accumulates those real responses into an in-memory, session-
-// scoped feed so the dashboard panels have something faithful to render.
-// It resets on page reload by design; wiring it to persistent backend list
-// endpoints (recommended next step) would replace this entirely.
+// SCOPE CHANGE: this store is no longer the admin dashboard's source of
+// truth. Real system-wide transactions arrive automatically (bank-side
+// ingestion, outside analyst control) and are read from the backend's
+// analytics/history endpoints directly in Overview.tsx — not from here.
+//
+// This context now backs ONLY the Sandbox page (src/pages/Sandbox.tsx),
+// giving an analyst an immediate, session-local echo of transactions THEY
+// personally submitted for manual testing/demo purposes. It intentionally
+// resets on page reload — it was never meant to persist, and should not be
+// read anywhere that needs to reflect real bank-wide activity.
 // ---------------------------------------------------------------------------
-
+ 
 interface ActivityContextValue {
   transactions: AssessedTransactionRecord[];
   vaultCases: VaultCaseRecord[];
@@ -32,18 +35,18 @@ interface ActivityContextValue {
   recordVaultReview: (vaultId: string, decision: VaultDecision) => void;
   recordProfilingRun: (result: AttackerProfilingResult) => void;
 }
-
+ 
 const ActivityContext = createContext<ActivityContextValue | undefined>(undefined);
-
+ 
 function genId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
-
+ 
 export const ActivityProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [transactions, setTransactions] = useState<AssessedTransactionRecord[]>([]);
   const [vaultCases, setVaultCases] = useState<VaultCaseRecord[]>([]);
   const [profilingRuns, setProfilingRuns] = useState<ProfilingRunRecord[]>([]);
-
+ 
   const recordAssessment = useCallback(
     (request: TransactionAssessRequest, response: TransactionAssessResponse) => {
       const record: AssessedTransactionRecord = {
@@ -53,7 +56,7 @@ export const ActivityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         request,
       };
       setTransactions((prev) => [record, ...prev].slice(0, 500));
-
+ 
       if (response.routing_decision === "vault" && response.vault_id) {
         setVaultCases((prev) => [
           {
@@ -68,7 +71,7 @@ export const ActivityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     },
     []
   );
-
+ 
   const recordVaultMove = useCallback((vaultId: string, transactionId: string, reason: string) => {
     setVaultCases((prev) => [
       {
@@ -81,13 +84,13 @@ export const ActivityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ...prev,
     ]);
   }, []);
-
+ 
   const recordVaultOtpVerified = useCallback((vaultId: string) => {
     setVaultCases((prev) =>
       prev.map((v) => (v.vault_id === vaultId ? { ...v, status: "otp_verified" } : v))
     );
   }, []);
-
+ 
   const recordVaultReview = useCallback((vaultId: string, decision: VaultDecision) => {
     setVaultCases((prev) =>
       prev.map((v) =>
@@ -97,14 +100,14 @@ export const ActivityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       )
     );
   }, []);
-
+ 
   const recordProfilingRun = useCallback((result: AttackerProfilingResult) => {
     setProfilingRuns((prev) => [
       { id: genId("run"), timestamp: new Date().toISOString(), result },
       ...prev,
     ]);
   }, []);
-
+ 
   const value = useMemo<ActivityContextValue>(
     () => ({
       transactions,
@@ -127,10 +130,10 @@ export const ActivityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       recordProfilingRun,
     ]
   );
-
+ 
   return <ActivityContext.Provider value={value}>{children}</ActivityContext.Provider>;
 };
-
+ 
 export function useActivity(): ActivityContextValue {
   const ctx = useContext(ActivityContext);
   if (!ctx) {
@@ -138,3 +141,4 @@ export function useActivity(): ActivityContextValue {
   }
   return ctx;
 }
+ 
