@@ -7,12 +7,13 @@ import ProtectedRoute from "@/auth/ProtectedRoute";
 import Layout from "@/components/Layout";
 import Login from "@/pages/Login";
 import Overview from "@/pages/Overview";
+import Sandbox from "@/pages/Sandbox";
 import SafeVault from "@/pages/SafeVault";
 import ThreatIntelligence from "@/pages/ThreatIntelligence";
 import AttackerProfiles from "@/pages/AttackerProfiles";
 import ModelPerformance from "@/pages/ModelPerformance";
 import AdminFeedbackQueue from "@/pages/AdminFeedbackQueue";
-
+ 
 const App: React.FC = () => {
   return (
     <BrowserRouter>
@@ -21,7 +22,7 @@ const App: React.FC = () => {
           <ActivityProvider>
             <Routes>
               <Route path="/login" element={<Login />} />
-
+ 
               <Route
                 element={
                   <ProtectedRoute>
@@ -30,6 +31,7 @@ const App: React.FC = () => {
                 }
               >
                 <Route path="/overview" element={<Overview />} />
+                <Route path="/sandbox" element={<Sandbox />} />
                 <Route path="/safe-vault" element={<SafeVault />} />
                 <Route path="/threat-intelligence" element={<ThreatIntelligence />} />
                 <Route
@@ -50,7 +52,7 @@ const App: React.FC = () => {
                   }
                 />
               </Route>
-
+ 
               <Route path="/" element={<Navigate to="/overview" replace />} />
               <Route path="*" element={<Navigate to="/overview" replace />} />
             </Routes>
@@ -60,5 +62,6 @@ const App: React.FC = () => {
     </BrowserRouter>
   );
 };
-
+ 
 export default App;
+ 
