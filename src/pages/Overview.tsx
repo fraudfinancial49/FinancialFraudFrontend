@@ -1,11 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   DollarSign,
   Gauge,
-  Timer,
-  Send,
-  Loader2,
+  ShieldAlert,
+  RefreshCw,
   AlertCircle,
 } from "lucide-react";
 import {
@@ -16,135 +15,205 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
   Legend,
 } from "recharts";
-import apiClient from "@/api/client";
-import { useActivity } from "@/store/ActivityContext";
+import { fetchAnalyticsSummary, fetchAnalyticsTimeseries, fetchTransactions } from "@/api/client";
 import { RiskScoreBadge, RoutingBadge } from "@/components/RiskBadges";
 import type {
-  TransactionAssessRequest,
-  TransactionAssessResponse,
-  TransactionType,
+  TransactionAnalyticsSummary,
+  TransactionTimeseriesPoint,
+  TransactionListItem,
 } from "@/types/api";
-
-const TX_TYPES: TransactionType[] = ["CASH_IN", "CASH_OUT", "DEBIT", "PAYMENT", "TRANSFER"];
-
-const DEFAULT_FORM: TransactionAssessRequest = {
-  nameOrig: "C1231006815",
-  nameDest: "M1979787155",
-  type: "TRANSFER",
-  amount: 181.0,
-  oldbalanceOrg: 181.0,
-  newbalanceOrig: 0.0,
-  oldbalanceDest: 0.0,
-  newbalanceDest: 0.0,
-  step: 1,
-  simulated_ip: "203.0.113.42",
-  user_agent: "Mozilla/5.0",
-  browser_fingerprint: "",
-};
-
+ 
+// ---------------------------------------------------------------------------
+// Live, bank-wide monitoring dashboard. Every transaction shown here was
+// scored and routed automatically by the backend as it arrived — nothing on
+// this page is submitted by the analyst. For manually testing the pipeline
+// with a hand-built transaction, use the separate Sandbox page.
+//
+// Pulls from three backend endpoints that must exist for this page to show
+// real data: GET /api/v1/analytics/summary, GET /api/v1/analytics/timeseries,
+// GET /api/v1/transactions. See the change document's "Backend requirements"
+// section for the expected response shapes. Until those routes are deployed,
+// this page degrades to a clear error state rather than crashing or silently
+// showing fabricated numbers.
+// ---------------------------------------------------------------------------
+ 
+type PresetKey = "today" | "7d" | "30d" | "90d";
+ 
+const PRESETS: { key: PresetKey; label: string; days: number }[] = [
+  { key: "today", label: "Today", days: 0 },
+  { key: "7d", label: "7 Days", days: 7 },
+  { key: "30d", label: "30 Days", days: 30 },
+  { key: "90d", label: "90 Days", days: 90 },
+];
+ 
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+ 
+function rangeForPreset(days: number): { start_date: string; end_date: string } {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+  return { start_date: isoDate(start), end_date: isoDate(end) };
+}
+ 
 const ROUTING_COLORS: Record<string, string> = {
-  approve: "#2fd97f",
-  vault: "#f5b942",
-  honeypot: "#f2545b",
+  approve_count: "#2fd97f",
+  vault_count: "#f5b942",
+  honeypot_count: "#f2545b",
 };
-
+ 
 export const Overview: React.FC = () => {
-  const { transactions, recordAssessment } = useActivity();
-  const [form, setForm] = useState<TransactionAssessRequest>(DEFAULT_FORM);
-  const [submitting, setSubmitting] = useState(false);
-  const [assessError, setAssessError] = useState<string | null>(null);
-  const [lastResult, setLastResult] = useState<TransactionAssessResponse | null>(null);
-
-  const kpis = useMemo(() => {
-    const total = transactions.length;
-    const totalVolume = transactions.reduce((sum, t) => sum + t.request.amount, 0);
-    const avgLatency =
-      total > 0 ? transactions.reduce((sum, t) => sum + t.latency_ms, 0) / total : 0;
-    const avgRisk =
-      total > 0 ? transactions.reduce((sum, t) => sum + t.final_risk_score, 0) / total : 0;
-    return { total, totalVolume, avgLatency, avgRisk };
-  }, [transactions]);
-
-  const routingBreakdown = useMemo(() => {
-    const counts: Record<string, number> = { approve: 0, vault: 0, honeypot: 0 };
-    transactions.forEach((t) => {
-      counts[t.routing_decision] = (counts[t.routing_decision] ?? 0) + 1;
-    });
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [transactions]);
-
-  const riskTimeline = useMemo(
-    () =>
-      transactions
-        .slice(0, 12)
-        .reverse()
-        .map((t, idx) => ({
-          index: idx + 1,
-          risk: Number(t.final_risk_score.toFixed(2)),
-        })),
-    [transactions]
-  );
-
-  const handleChange = (
-    field: keyof TransactionAssessRequest
-  ) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const raw = e.target.value;
-    const isNumeric = ["amount", "oldbalanceOrg", "newbalanceOrig", "oldbalanceDest", "newbalanceDest", "step"].includes(
-      field
-    );
-    setForm((prev) => ({
-      ...prev,
-      [field]: isNumeric ? Number(raw) : raw,
-    }));
+  const [activePreset, setActivePreset] = useState<PresetKey>("7d");
+  const [startDate, setStartDate] = useState(() => rangeForPreset(7).start_date);
+  const [endDate, setEndDate] = useState(() => rangeForPreset(7).end_date);
+ 
+  const [summary, setSummary] = useState<TransactionAnalyticsSummary | null>(null);
+  const [timeseries, setTimeseries] = useState<TransactionTimeseriesPoint[]>([]);
+  const [recent, setRecent] = useState<TransactionListItem[]>([]);
+ 
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+ 
+  const applyPreset = (preset: PresetKey, days: number) => {
+    setActivePreset(preset);
+    const { start_date, end_date } = rangeForPreset(days);
+    setStartDate(start_date);
+    setEndDate(end_date);
   };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setAssessError(null);
+ 
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const payload: TransactionAssessRequest = {
-        ...form,
-        browser_fingerprint: form.browser_fingerprint || undefined,
-      };
-      const response = await apiClient.post<TransactionAssessResponse>(
-        "/api/v1/transactions/assess",
-        payload
-      );
-      setLastResult(response.data);
-      recordAssessment(payload, response.data);
+      const range = { start_date: startDate, end_date: endDate };
+      const [summaryRes, timeseriesRes, recentRes] = await Promise.all([
+        fetchAnalyticsSummary(range),
+        fetchAnalyticsTimeseries({ ...range, interval: "day" }),
+        fetchTransactions({ ...range, page: 1, page_size: 15 }),
+      ]);
+      setSummary(summaryRes);
+      setTimeseries(timeseriesRes);
+      setRecent(recentRes.items);
     } catch (err: any) {
       const detail =
         err?.response?.data?.detail ||
         err?.response?.data?.message ||
-        "Assessment request failed. Confirm the backend is running and the model registry is loaded.";
-      setAssessError(typeof detail === "string" ? detail : JSON.stringify(detail));
+        "Could not load live analytics. Confirm the backend's analytics/transactions endpoints are deployed.";
+      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setSummary(null);
+      setTimeseries([]);
+      setRecent([]);
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
-  };
-
+  }, [startDate, endDate]);
+ 
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+ 
+  const fraudRatePct = useMemo(
+    () => (summary ? (summary.fraud_rate * 100).toFixed(2) : "—"),
+    [summary]
+  );
+ 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-slate-50">Live Fraud Monitoring</h1>
-        <p className="text-sm text-slate-500">
-          Real-time transaction stream, hybrid ML/graph risk fusion, and routing outcomes.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-50">Live Fraud Monitoring</h1>
+          <p className="text-sm text-slate-500">
+            Bank-wide transactions, scored and routed automatically. Date-range analytics below.
+          </p>
+        </div>
+        <button
+          onClick={loadDashboard}
+          disabled={loading}
+          className="btn-secondary"
+          title="Refresh"
+        >
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
       </div>
-
+ 
+      <div className="flex flex-wrap items-center gap-2 panel p-3">
+        {PRESETS.map((p) => (
+          <button
+            key={p.key}
+            onClick={() => applyPreset(p.key, p.days)}
+            className={`badge cursor-pointer ${
+              activePreset === p.key
+                ? "bg-accent-indigo/20 text-accent-indigo"
+                : "bg-vault-800 text-slate-400"
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+        <div className="ml-auto flex items-center gap-2 text-sm text-slate-400">
+          <label className="flex items-center gap-1">
+            From
+            <input
+              type="date"
+              value={startDate}
+              max={endDate}
+              onChange={(e) => {
+                setActivePreset("30d");
+                setStartDate(e.target.value);
+              }}
+              className="input-field"
+            />
+          </label>
+          <label className="flex items-center gap-1">
+            To
+            <input
+              type="date"
+              value={endDate}
+              min={startDate}
+              max={isoDate(new Date())}
+              onChange={(e) => {
+                setActivePreset("30d");
+                setEndDate(e.target.value);
+              }}
+              className="input-field"
+            />
+          </label>
+        </div>
+      </div>
+ 
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg border border-risk-high/40 bg-risk-high/10 p-4 text-sm text-risk-high">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Live analytics unavailable</p>
+            <p className="text-risk-high/80">{error}</p>
+          </div>
+        </div>
+      )}
+ 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="kpi-card">
           <div className="flex items-center justify-between">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Session Assessments</span>
+            <span className="text-xs uppercase tracking-wide text-slate-500">Total Transactions</span>
             <Activity className="h-4 w-4 text-accent-indigo" />
           </div>
-          <span className="text-2xl font-bold text-slate-50">{kpis.total}</span>
+          <span className="text-2xl font-bold text-slate-50">
+            {summary ? summary.total_transactions.toLocaleString() : "—"}
+          </span>
+        </div>
+        <div className="kpi-card">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Flagged (Vault + Honeypot)</span>
+            <ShieldAlert className="h-4 w-4 text-risk-high" />
+          </div>
+          <span className="text-2xl font-bold text-slate-50">
+            {summary ? summary.flagged_count.toLocaleString() : "—"}
+          </span>
+          <span className="text-xs text-slate-500">{fraudRatePct}% of total</span>
         </div>
         <div className="kpi-card">
           <div className="flex items-center justify-between">
@@ -152,278 +221,86 @@ export const Overview: React.FC = () => {
             <DollarSign className="h-4 w-4 text-accent-teal" />
           </div>
           <span className="text-2xl font-bold text-slate-50">
-            ${kpis.totalVolume.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            {summary ? summary.total_volume.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
           </span>
         </div>
         <div className="kpi-card">
           <div className="flex items-center justify-between">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Avg Final Risk</span>
-            <Gauge className="h-4 w-4 text-risk-moderate" />
+            <span className="text-xs uppercase tracking-wide text-slate-500">Avg Risk Score</span>
+            <Gauge className="h-4 w-4 text-accent-indigo" />
           </div>
-          <span className="text-2xl font-bold text-slate-50">{kpis.avgRisk.toFixed(1)}</span>
-        </div>
-        <div className="kpi-card">
-          <div className="flex items-center justify-between">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Avg Latency</span>
-            <Timer className="h-4 w-4 text-accent-indigo" />
-          </div>
-          <span className="text-2xl font-bold text-slate-50">{kpis.avgLatency.toFixed(0)} ms</span>
+          <span className="text-2xl font-bold text-slate-50">
+            {summary ? summary.avg_risk_score.toFixed(1) : "—"}
+          </span>
         </div>
       </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <div className="panel lg:col-span-2">
-          <div className="panel-header">
-            <h2 className="text-sm font-semibold text-slate-200">Assess a Transaction</h2>
-          </div>
-          <form onSubmit={handleSubmit} className="space-y-3 p-5">
-            {assessError && (
-              <div className="flex items-start gap-2 rounded-lg border border-risk-high/40 bg-risk-high/10 px-3 py-2 text-xs text-risk-high">
-                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>{assessError}</span>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Name Orig</label>
-                <input className="input-field" value={form.nameOrig} onChange={handleChange("nameOrig")} required />
-              </div>
-              <div>
-                <label className="field-label">Name Dest</label>
-                <input className="input-field" value={form.nameDest} onChange={handleChange("nameDest")} required />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Type</label>
-                <select className="input-field" value={form.type} onChange={handleChange("type")}>
-                  {TX_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="field-label">Step</label>
-                <input
-                  type="number"
-                  className="input-field"
-                  value={form.step}
-                  onChange={handleChange("step")}
-                  min={0}
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <label className="field-label">Amount</label>
-              <input
-                type="number"
-                step="0.01"
-                className="input-field"
-                value={form.amount}
-                onChange={handleChange("amount")}
-                min={0.01}
-                required
+ 
+      <div className="panel p-4">
+        <h2 className="mb-3 text-sm font-semibold text-slate-200">Transactions by Day</h2>
+        <div className="h-72">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={timeseries}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2a2f45" />
+              <XAxis dataKey="date" stroke="#8892b0" fontSize={12} />
+              <YAxis stroke="#8892b0" fontSize={12} />
+              <Tooltip
+                contentStyle={{ background: "#151a2e", border: "1px solid #2a2f45" }}
+                labelStyle={{ color: "#e2e8f0" }}
               />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Old Balance Orig</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="input-field"
-                  value={form.oldbalanceOrg}
-                  onChange={handleChange("oldbalanceOrg")}
-                  min={0}
-                  required
-                />
-              </div>
-              <div>
-                <label className="field-label">New Balance Orig</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="input-field"
-                  value={form.newbalanceOrig}
-                  onChange={handleChange("newbalanceOrig")}
-                  min={0}
-                  required
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Old Balance Dest</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="input-field"
-                  value={form.oldbalanceDest}
-                  onChange={handleChange("oldbalanceDest")}
-                  min={0}
-                  required
-                />
-              </div>
-              <div>
-                <label className="field-label">New Balance Dest</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="input-field"
-                  value={form.newbalanceDest}
-                  onChange={handleChange("newbalanceDest")}
-                  min={0}
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <label className="field-label">Browser Fingerprint (optional)</label>
-              <input
-                className="input-field"
-                value={form.browser_fingerprint}
-                onChange={handleChange("browser_fingerprint")}
-                placeholder="fp_9f3a2c…"
-              />
-            </div>
-
-            <button type="submit" disabled={submitting} className="btn-primary w-full justify-center">
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {submitting ? "Assessing…" : "Run Risk Assessment"}
-            </button>
-
-            {lastResult && (
-              <div className="mt-2 space-y-2 rounded-lg border border-vault-700 bg-vault-850 p-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Routing</span>
-                  <RoutingBadge decision={lastResult.routing_decision} />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Risk score</span>
-                  <RiskScoreBadge score={lastResult.final_risk_score} />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Latency</span>
-                  <span className="font-mono text-xs text-slate-300">
-                    {lastResult.latency_ms.toFixed(1)} ms
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500">{lastResult.message}</p>
-                {lastResult.vault_id && (
-                  <p className="font-mono text-[11px] text-risk-moderate">
-                    vault_id: {lastResult.vault_id}
-                  </p>
-                )}
-                {lastResult.honeypot_session_id && (
-                  <p className="font-mono text-[11px] text-risk-high">
-                    honeypot_session_id: {lastResult.honeypot_session_id}
-                  </p>
-                )}
-              </div>
-            )}
-          </form>
-        </div>
-
-        <div className="space-y-6 lg:col-span-3">
-          <div className="panel">
-            <div className="panel-header">
-              <h2 className="text-sm font-semibold text-slate-200">Routing Decisions (session)</h2>
-            </div>
-            <div className="h-64 p-4">
-              {routingBreakdown.some((r) => r.value > 0) ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={routingBreakdown}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={55}
-                      outerRadius={85}
-                      paddingAngle={3}
-                    >
-                      {routingBreakdown.map((entry) => (
-                        <Cell key={entry.name} fill={ROUTING_COLORS[entry.name]} />
-                      ))}
-                    </Pie>
-                    <Legend />
-                    <Tooltip
-                      contentStyle={{ background: "#0e1424", border: "1px solid #1c2540" }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <EmptyState label="Run an assessment to populate routing analytics." />
-              )}
-            </div>
-          </div>
-
-          <div className="panel">
-            <div className="panel-header">
-              <h2 className="text-sm font-semibold text-slate-200">Recent Risk Scores</h2>
-            </div>
-            <div className="h-64 p-4">
-              {riskTimeline.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={riskTimeline}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" />
-                    <XAxis dataKey="index" stroke="#64748b" fontSize={12} />
-                    <YAxis stroke="#64748b" fontSize={12} domain={[0, 100]} />
-                    <Tooltip contentStyle={{ background: "#0e1424", border: "1px solid #1c2540" }} />
-                    <Bar dataKey="risk" fill="#5b6df8" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <EmptyState label="No assessments yet this session." />
-              )}
-            </div>
-          </div>
+              <Legend />
+              <Bar dataKey="approve_count" stackId="a" name="Approved" fill={ROUTING_COLORS.approve_count} />
+              <Bar dataKey="vault_count" stackId="a" name="Safe Vault" fill={ROUTING_COLORS.vault_count} />
+              <Bar dataKey="honeypot_count" stackId="a" name="Honeypot" fill={ROUTING_COLORS.honeypot_count} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
-
-      <div className="panel">
-        <div className="panel-header">
-          <h2 className="text-sm font-semibold text-slate-200">Transaction Stream</h2>
-        </div>
-        <div className="max-h-96 overflow-y-auto">
+ 
+      <div className="panel p-4">
+        <h2 className="mb-3 text-sm font-semibold text-slate-200">Recent Transactions</h2>
+        <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="sticky top-0 bg-vault-900 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-2">Tx ID</th>
-                <th className="px-4 py-2">Type</th>
-                <th className="px-4 py-2">Amount</th>
-                <th className="px-4 py-2">Risk</th>
-                <th className="px-4 py-2">Routing</th>
-                <th className="px-4 py-2">Latency</th>
-                <th className="px-4 py-2">Time</th>
+            <thead>
+              <tr className="border-b border-vault-700/60 text-xs uppercase tracking-wide text-slate-500">
+                <th className="py-2 pr-4">Time</th>
+                <th className="py-2 pr-4">From</th>
+                <th className="py-2 pr-4">To</th>
+                <th className="py-2 pr-4">Type</th>
+                <th className="py-2 pr-4">Amount</th>
+                <th className="py-2 pr-4">Risk</th>
+                <th className="py-2 pr-4">Routing</th>
+                <th className="py-2 pr-4">Source</th>
               </tr>
             </thead>
             <tbody>
-              {transactions.length === 0 && (
+              {recent.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
-                    No transactions assessed yet this session.
+                  <td colSpan={8} className="py-6 text-center text-slate-500">
+                    No transactions in this date range.
                   </td>
                 </tr>
               )}
-              {transactions.map((t) => (
-                <tr key={t.id} className="border-t border-vault-700/60">
-                  <td className="px-4 py-2 font-mono text-xs text-slate-400">
-                    {t.transaction_id.slice(0, 10)}…
+              {recent.map((tx) => (
+                <tr key={tx.transaction_id} className="border-b border-vault-800/60">
+                  <td className="py-2 pr-4 text-slate-400">
+                    {new Date(tx.timestamp).toLocaleString()}
                   </td>
-                  <td className="px-4 py-2 text-slate-300">{t.request.type}</td>
-                  <td className="px-4 py-2 text-slate-300">${t.request.amount.toLocaleString()}</td>
-                  <td className="px-4 py-2">
-                    <RiskScoreBadge score={t.final_risk_score} />
+                  <td className="py-2 pr-4 text-slate-300">{tx.name_orig}</td>
+                  <td className="py-2 pr-4 text-slate-300">{tx.name_dest}</td>
+                  <td className="py-2 pr-4 text-slate-400">{tx.type}</td>
+                  <td className="py-2 pr-4 text-slate-300">
+                    {tx.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </td>
-                  <td className="px-4 py-2">
-                    <RoutingBadge decision={t.routing_decision} />
+                  <td className="py-2 pr-4">
+                    <RiskScoreBadge score={tx.final_risk_score} />
                   </td>
-                  <td className="px-4 py-2 text-slate-400">{t.latency_ms.toFixed(1)} ms</td>
-                  <td className="px-4 py-2 text-slate-500">
-                    {new Date(t.timestamp).toLocaleTimeString()}
+                  <td className="py-2 pr-4">
+                    <RoutingBadge decision={tx.routing_decision} />
+                  </td>
+                  <td className="py-2 pr-4">
+                    <span className="badge bg-vault-800 text-slate-400">
+                      {tx.source === "manual_sandbox" ? "Sandbox" : "Auto"}
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -434,11 +311,6 @@ export const Overview: React.FC = () => {
     </div>
   );
 };
-
-const EmptyState: React.FC<{ label: string }> = ({ label }) => (
-  <div className="flex h-full items-center justify-center text-center text-sm text-slate-500">
-    {label}
-  </div>
-);
-
+ 
 export default Overview;
+ 
