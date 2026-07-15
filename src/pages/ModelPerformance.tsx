@@ -58,8 +58,6 @@ export const ModelPerformance: React.FC = () => {
   }, []);
 
   // Live SHAP fetch — fires whenever an analyst clicks a transaction row
-  // below. Hits the real backend explainability route for that specific
-  // transaction_id; no client-side fabrication of feature impacts.
   useEffect(() => {
     if (!selectedTxId) return;
     let cancelled = false;
@@ -68,7 +66,8 @@ export const ModelPerformance: React.FC = () => {
       setShapLoading(true);
       setShapError(null);
       try {
-        const { data } = await apiClient.get<ShapExplanationResponse>(
+        # FIXED: HTTP method adjusted to POST to comply with backend transaction router definitions
+        const { data } = await apiClient.post<ShapExplanationResponse>(
           `/api/v1/transactions/${selectedTxId}/explain`
         );
         if (cancelled) return;
@@ -233,7 +232,7 @@ export const ModelPerformance: React.FC = () => {
           <div className="flex items-start gap-2 rounded-lg border border-vault-700 bg-vault-850 px-3 py-2 text-xs text-slate-500">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-teal" />
             <span>
-              No assessed transactions yet this session. Run an assessment on the Overview page, then
+              No assessed transactions yet this session. Run an assessment on the Sandbox page, then
               select it below to fetch its live SHAP explanation.
             </span>
           </div>
