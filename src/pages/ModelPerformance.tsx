@@ -66,7 +66,7 @@ export const ModelPerformance: React.FC = () => {
       setShapLoading(true);
       setShapError(null);
       try {
-        # FIXED: HTTP method adjusted to POST to comply with backend transaction router definitions
+        // FIXED: HTTP method adjusted to POST to comply with backend transaction router definitions
         const { data } = await apiClient.post<ShapExplanationResponse>(
           `/api/v1/transactions/${selectedTxId}/explain`
         );
@@ -299,3 +299,4 @@ export const ModelPerformance: React.FC = () => {
 };
 
 export default ModelPerformance;
+      
