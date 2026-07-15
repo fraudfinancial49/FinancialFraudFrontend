@@ -40,12 +40,15 @@ export const ModelPerformance: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await apiClient.get<ModelInfoResponse>("/model-info");
+      // FIXED: Pointing to the new prefixed backend route
+      const { data } = await apiClient.get<ModelInfoResponse>("/api/v1/model-info");
       setInfo(data);
     } catch (err: any) {
+      // FIXED: Added checks for custom backend "message" keys
       setError(
         err?.response?.data?.detail ||
-          "Could not reach /model-info. Confirm the backend is running and reachable."
+        err?.response?.data?.message ||
+        "Could not reach /api/v1/model-info. Confirm the backend is running and reachable."
       );
     } finally {
       setLoading(false);
@@ -66,7 +69,6 @@ export const ModelPerformance: React.FC = () => {
       setShapLoading(true);
       setShapError(null);
       try {
-        // FIXED: HTTP method adjusted to POST to comply with backend transaction router definitions
         const { data } = await apiClient.post<ShapExplanationResponse>(
           `/api/v1/transactions/${selectedTxId}/explain`
         );
@@ -82,9 +84,11 @@ export const ModelPerformance: React.FC = () => {
       } catch (err: any) {
         if (cancelled) return;
         setShapData(null);
+        // FIXED: Allows the true FastAPI exception message to render on the dashboard
         setShapError(
           err?.response?.data?.detail ||
-            "Could not reach /api/v1/transactions/{id}/explain. Confirm the backend explainability route is deployed."
+          err?.response?.data?.message ||
+          "Could not reach /api/v1/transactions/{id}/explain. Confirm the backend explainability route is deployed."
         );
       } finally {
         if (!cancelled) setShapLoading(false);
@@ -299,4 +303,3 @@ export const ModelPerformance: React.FC = () => {
 };
 
 export default ModelPerformance;
-      
