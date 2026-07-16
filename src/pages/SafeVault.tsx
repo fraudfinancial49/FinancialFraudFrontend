@@ -62,26 +62,6 @@ export const SafeVault: React.FC = () => {
   const [escalateError, setEscalateError] = useState<string | null>(null);
   const [escalateResult, setEscalateResult] = useState<GenericStatus | null>(null);
 
-  // --- NEW: URL Parameter "Sticky Note" Listener ---
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const txToEscalate = params.get("escalate_tx");
-    
-    if (txToEscalate) {
-      // 1. Drop the ID into the escalation box
-      setEscalateTxId(txToEscalate);
-      
-      // 2. Silently scrub the URL clean so it doesn't stay there forever
-      const cleanUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, cleanUrl);
-      
-      // 3. Optional: Smoothly scroll down so the admin sees the form is filled out
-      setTimeout(() => {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
-      }, 100);
-    }
-  }, []);
-
   // --- Real-time DB Fetching ---
   const fetchVaultLogs = async () => {
     setLogsLoading(true);
