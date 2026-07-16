@@ -81,10 +81,9 @@ export const SafeVault: React.FC = () => {
   }, []);
 
   // --- UX Helper: Auto-fill forms from table ---
-  const handleLoadVault = (vaultId: string, transactionId: string) => {
+  const handleLoadVault = (vaultId: string) => {
     setOtpVaultId(vaultId);
     setReviewVaultId(vaultId);
-    setEscalateTxId(transactionId);
     setOtpCode(""); // Reset OTP field for a fresh attempt
     setOtpMessage(null);
     setOtpError(null);
