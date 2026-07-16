@@ -17,6 +17,14 @@ const STATUS_STYLES: Record<string, string> = {
   rejected: "bg-risk-high/15 text-risk-high border border-risk-high/20",
 };
 
+// Map backend statuses to beautiful frontend display labels
+const STATUS_DISPLAY: Record<string, string> = {
+  frozen: "Frozen",
+  otp_verified: "OTP Verified & Released",
+  released: "Admin Released",
+  rejected: "Admin Rejected",
+};
+
 interface VaultCase {
   vault_id: string;
   transaction_id: string;
@@ -93,7 +101,6 @@ export const SafeVault: React.FC = () => {
     setOtpError(null);
     setOtpMessage(null);
     try {
-      // Sending an empty code triggers the backend generation logic
       const payload: VaultOTPVerifyRequest = { vault_id: otpVaultId, otp_code: "" };
       const { data } = await apiClient.post<GenericStatus>("/api/v1/vault/otp", payload);
       setOtpMessage(data);
@@ -175,6 +182,12 @@ export const SafeVault: React.FC = () => {
     }
   };
 
+  // --- Dynamic Panel Locking Logic ---
+  const activeReviewCase = vaultLogs.find(v => v.vault_id === reviewVaultId);
+  const isOtpResolved = activeReviewCase?.status === "otp_verified";
+  const isAdminResolved = activeReviewCase?.status === "released" || activeReviewCase?.status === "rejected";
+  const isPanelLocked = isOtpResolved || isAdminResolved;
+
   return (
     <div className="space-y-6">
       <div>
@@ -205,7 +218,7 @@ export const SafeVault: React.FC = () => {
             />
           </div>
 
-          {/* New Generate OTP Button */}
+          {/* Generate OTP Button */}
           <button 
             type="button" 
             onClick={generateOtp} 
@@ -262,19 +275,44 @@ export const SafeVault: React.FC = () => {
               required
             />
           </div>
-          <div>
-            <label className="field-label">Justification note</label>
-            <textarea
-              className="input-field min-h-[84px] resize-none"
-              value={reviewReason}
-              onChange={(e) => setReviewReason(e.target.value)}
-              placeholder="Explain the basis for release or rejection…"
-            />
-          </div>
+
+          {/* Dynamic Locking UI */}
+          {isOtpResolved ? (
+            <div className="rounded-lg border border-accent-teal/30 bg-accent-teal/10 p-4 text-sm text-accent-teal">
+              <div className="flex items-center gap-2 font-semibold">
+                <CheckCircle2 className="h-4 w-4" />
+                OTP Verified & Released
+              </div>
+              <p className="mt-1 text-xs text-accent-teal/80">
+                This transaction has already been securely released by the account holder. Admin override is no longer required.
+              </p>
+            </div>
+          ) : isAdminResolved ? (
+            <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-400">
+              <div className="flex items-center gap-2 font-semibold">
+                <CheckCircle2 className="h-4 w-4" />
+                Already Reviewed
+              </div>
+              <p className="mt-1 text-xs">
+                This transaction has already been processed by an administrator.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label className="field-label">Justification note</label>
+              <textarea
+                className="input-field min-h-[84px] resize-none"
+                value={reviewReason}
+                onChange={(e) => setReviewReason(e.target.value)}
+                placeholder="Explain the basis for release or rejection…"
+              />
+            </div>
+          )}
+
           <div className="flex gap-2">
             <button
               type="button"
-              disabled={!reviewVaultId || reviewBusy !== null}
+              disabled={!reviewVaultId || reviewBusy !== null || isPanelLocked}
               onClick={() => submitReview("approve")}
               className="btn-success flex-1 justify-center"
             >
@@ -283,7 +321,7 @@ export const SafeVault: React.FC = () => {
             </button>
             <button
               type="button"
-              disabled={!reviewVaultId || reviewBusy !== null}
+              disabled={!reviewVaultId || reviewBusy !== null || isPanelLocked}
               onClick={() => submitReview("reject")}
               className="btn-danger flex-1 justify-center"
             >
@@ -386,7 +424,9 @@ export const SafeVault: React.FC = () => {
                       {v.transaction_id.slice(0, 12)}…
                     </td>
                     <td className="px-4 py-2">
-                      <span className={`badge ${STATUS_STYLES[v.status] || "bg-slate-800 text-slate-300"}`}>{v.status}</span>
+                      <span className={`badge ${STATUS_STYLES[v.status] || "bg-slate-800 text-slate-300"}`}>
+                        {STATUS_DISPLAY[v.status] || v.status}
+                      </span>
                     </td>
                     <td className="px-4 py-2 text-slate-400">{v.reason ?? "—"}</td>
                     <td className="px-4 py-2 text-slate-400">
