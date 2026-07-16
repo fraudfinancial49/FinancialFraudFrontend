@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Lock, KeyRound, CheckCircle2, XCircle, PlusCircle, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { Lock, KeyRound, CheckCircle2, XCircle, PlusCircle, Loader2, AlertCircle, RefreshCw, ArrowUpRight } from "lucide-react";
 import apiClient from "@/api/client";
 import { useActivity } from "@/store/ActivityContext";
 import type {
@@ -11,10 +11,10 @@ import type {
 } from "@/types/api";
 
 const STATUS_STYLES: Record<string, string> = {
-  frozen: "bg-risk-moderate/15 text-risk-moderate",
-  otp_verified: "bg-accent-teal/15 text-accent-teal",
-  released: "bg-risk-low/15 text-risk-low",
-  rejected: "bg-risk-high/15 text-risk-high",
+  frozen: "bg-risk-moderate/15 text-risk-moderate border border-risk-moderate/20",
+  otp_verified: "bg-accent-teal/15 text-accent-teal border border-accent-teal/20",
+  released: "bg-risk-low/15 text-risk-low border border-risk-low/20",
+  rejected: "bg-risk-high/15 text-risk-high border border-risk-high/20",
 };
 
 // Define the shape of your backend vault log response
@@ -27,7 +27,6 @@ interface VaultCase {
 }
 
 export const SafeVault: React.FC = () => {
-  // We keep the context ONLY for global metric counters, but we drop 'vaultCases'
   const { recordVaultMove, recordVaultOtpVerified, recordVaultReview } = useActivity();
 
   // --- Production Persistent State ---
@@ -60,7 +59,6 @@ export const SafeVault: React.FC = () => {
     setLogsLoading(true);
     setLogsError(null);
     try {
-      // Assuming your backend has an endpoint to list vault cases ordered by date desc
       const { data } = await apiClient.get<VaultCase[]>("/api/v1/vault/cases");
       setVaultLogs(data);
     } catch (err: any) {
@@ -75,6 +73,13 @@ export const SafeVault: React.FC = () => {
     fetchVaultLogs();
   }, []);
 
+  // --- UX Helper: Auto-fill forms from table ---
+  const handleLoadVault = (vaultId: string) => {
+    setOtpVaultId(vaultId);
+    setReviewVaultId(vaultId);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const submitOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setOtpBusy(true);
@@ -86,7 +91,7 @@ export const SafeVault: React.FC = () => {
       setOtpMessage(data);
       if (data.status === "otp_verified") {
         recordVaultOtpVerified(otpVaultId);
-        await fetchVaultLogs(); // Refresh table immediately
+        await fetchVaultLogs(); 
       }
     } catch (err: any) {
       setOtpError(err?.response?.data?.detail || "OTP request failed.");
@@ -107,7 +112,7 @@ export const SafeVault: React.FC = () => {
       await apiClient.post<GenericStatus>("/api/v1/vault/review", payload);
       recordVaultReview(reviewVaultId, decision);
       setReviewReason("");
-      await fetchVaultLogs(); // Refresh table immediately
+      await fetchVaultLogs(); 
     } catch (err: any) {
       setReviewError(err?.response?.data?.detail || "Admin review failed.");
     } finally {
@@ -127,7 +132,7 @@ export const SafeVault: React.FC = () => {
       const vaultId = (data.data?.vault_id as string) ?? "";
       if (vaultId) {
         recordVaultMove(vaultId, escalateTxId, escalateReason);
-        await fetchVaultLogs(); // Refresh table immediately
+        await fetchVaultLogs(); 
       }
       setEscalateTxId("");
       setEscalateReason("");
@@ -296,34 +301,38 @@ export const SafeVault: React.FC = () => {
 
         <div className="max-h-96 overflow-y-auto">
           <table className="w-full text-left text-sm">
-            <thead className="sticky top-0 bg-vault-900 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+            <thead className="sticky top-0 bg-vault-900 text-xs uppercase tracking-wide text-slate-500 shadow-sm z-10">
               <tr>
                 <th className="px-4 py-2">Vault ID</th>
                 <th className="px-4 py-2">Transaction ID</th>
                 <th className="px-4 py-2">Status</th>
                 <th className="px-4 py-2">Reason</th>
                 <th className="px-4 py-2">Created</th>
+                <th className="px-4 py-2 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {logsLoading && vaultLogs.length === 0 ? (
                  <tr>
-                 <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                 {/* Updated colSpan from 5 to 6 to account for the new Action column */}
+                 <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
                    <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
                    Querying database...
                  </td>
                </tr>
               ) : vaultLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
                     No Safe Vault cases exist in the database yet.
                   </td>
                 </tr>
               ) : (
                 vaultLogs.map((v) => (
                   <tr key={v.vault_id} className="border-t border-vault-700/60 hover:bg-vault-800/30 transition-colors">
-                    <td className="px-4 py-2 font-mono text-xs text-slate-300">{v.vault_id.slice(0, 12)}…</td>
-                    <td className="px-4 py-2 font-mono text-xs text-slate-300">
+                    <td className="px-4 py-2 font-mono text-xs text-slate-300" title={v.vault_id}>
+                      {v.vault_id.slice(0, 12)}…
+                    </td>
+                    <td className="px-4 py-2 font-mono text-xs text-slate-300" title={v.transaction_id}>
                       {v.transaction_id.slice(0, 12)}…
                     </td>
                     <td className="px-4 py-2">
@@ -332,6 +341,18 @@ export const SafeVault: React.FC = () => {
                     <td className="px-4 py-2 text-slate-400">{v.reason ?? "—"}</td>
                     <td className="px-4 py-2 text-slate-400">
                       {new Date(v.created_at).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {v.status === "frozen" && (
+                        <button
+                          onClick={() => handleLoadVault(v.vault_id)}
+                          className="inline-flex items-center gap-1 rounded border border-vault-600 bg-vault-800 px-2 py-1 text-xs font-medium text-slate-300 transition hover:border-accent-indigo hover:bg-accent-indigo/20 hover:text-accent-indigo"
+                          title="Load ID into forms"
+                        >
+                          <ArrowUpRight className="h-3 w-3" />
+                          Resolve
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
