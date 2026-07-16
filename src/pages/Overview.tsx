@@ -24,66 +24,52 @@ import type {
   TransactionTimeseriesPoint,
   TransactionListItem,
 } from "@/types/api";
- 
-// ---------------------------------------------------------------------------
-// Live, bank-wide monitoring dashboard. Every transaction shown here was
-// scored and routed automatically by the backend as it arrived — nothing on
-// this page is submitted by the analyst. For manually testing the pipeline
-// with a hand-built transaction, use the separate Sandbox page.
-//
-// Pulls from three backend endpoints that must exist for this page to show
-// real data: GET /api/v1/analytics/summary, GET /api/v1/analytics/timeseries,
-// GET /api/v1/transactions. See the change document's "Backend requirements"
-// section for the expected response shapes. Until those routes are deployed,
-// this page degrades to a clear error state rather than crashing or silently
-// showing fabricated numbers.
-// ---------------------------------------------------------------------------
- 
+
 type PresetKey = "today" | "7d" | "30d" | "90d";
- 
+
 const PRESETS: { key: PresetKey; label: string; days: number }[] = [
   { key: "today", label: "Today", days: 0 },
   { key: "7d", label: "7 Days", days: 7 },
   { key: "30d", label: "30 Days", days: 30 },
   { key: "90d", label: "90 Days", days: 90 },
 ];
- 
+
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
- 
+
 function rangeForPreset(days: number): { start_date: string; end_date: string } {
   const end = new Date();
   const start = new Date();
   start.setDate(start.getDate() - days);
   return { start_date: isoDate(start), end_date: isoDate(end) };
 }
- 
+
 const ROUTING_COLORS: Record<string, string> = {
   approve_count: "#2fd97f",
   vault_count: "#f5b942",
   honeypot_count: "#f2545b",
 };
- 
+
 export const Overview: React.FC = () => {
   const [activePreset, setActivePreset] = useState<PresetKey>("7d");
   const [startDate, setStartDate] = useState(() => rangeForPreset(7).start_date);
   const [endDate, setEndDate] = useState(() => rangeForPreset(7).end_date);
- 
+
   const [summary, setSummary] = useState<TransactionAnalyticsSummary | null>(null);
   const [timeseries, setTimeseries] = useState<TransactionTimeseriesPoint[]>([]);
   const [recent, setRecent] = useState<TransactionListItem[]>([]);
- 
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
- 
+
   const applyPreset = (preset: PresetKey, days: number) => {
     setActivePreset(preset);
     const { start_date, end_date } = rangeForPreset(days);
     setStartDate(start_date);
     setEndDate(end_date);
   };
- 
+
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -110,16 +96,16 @@ export const Overview: React.FC = () => {
       setLoading(false);
     }
   }, [startDate, endDate]);
- 
+
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
- 
+
   const fraudRatePct = useMemo(
     () => (summary ? (summary.fraud_rate * 100).toFixed(2) : "—"),
     [summary]
   );
- 
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -139,7 +125,7 @@ export const Overview: React.FC = () => {
           Refresh
         </button>
       </div>
- 
+
       <div className="flex flex-wrap items-center gap-2 panel p-3">
         {PRESETS.map((p) => (
           <button
@@ -184,7 +170,7 @@ export const Overview: React.FC = () => {
           </label>
         </div>
       </div>
- 
+
       {error && (
         <div className="flex items-start gap-2 rounded-lg border border-risk-high/40 bg-risk-high/10 p-4 text-sm text-risk-high">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -194,7 +180,7 @@ export const Overview: React.FC = () => {
           </div>
         </div>
       )}
- 
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="kpi-card">
           <div className="flex items-center justify-between">
@@ -234,7 +220,7 @@ export const Overview: React.FC = () => {
           </span>
         </div>
       </div>
- 
+
       <div className="panel p-4">
         <h2 className="mb-3 text-sm font-semibold text-slate-200">Transactions by Day</h2>
         <div className="h-72">
@@ -255,7 +241,7 @@ export const Overview: React.FC = () => {
           </ResponsiveContainer>
         </div>
       </div>
- 
+
       <div className="panel p-4">
         <h2 className="mb-3 text-sm font-semibold text-slate-200">Recent Transactions</h2>
         <div className="overflow-x-auto">
@@ -270,18 +256,19 @@ export const Overview: React.FC = () => {
                 <th className="py-2 pr-4">Risk</th>
                 <th className="py-2 pr-4">Routing</th>
                 <th className="py-2 pr-4">Source</th>
+                <th className="py-2 pl-4 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {recent.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={8} className="py-6 text-center text-slate-500">
+                  <td colSpan={9} className="py-6 text-center text-slate-500">
                     No transactions in this date range.
                   </td>
                 </tr>
               )}
               {recent.map((tx) => (
-                <tr key={tx.transaction_id} className="border-b border-vault-800/60">
+                <tr key={tx.transaction_id} className="border-b border-vault-800/60 hover:bg-vault-800/30">
                   <td className="py-2 pr-4 text-slate-400">
                     {new Date(tx.timestamp).toLocaleString()}
                   </td>
@@ -302,6 +289,19 @@ export const Overview: React.FC = () => {
                       {tx.source === "manual_sandbox" ? "Sandbox" : "Auto"}
                     </span>
                   </td>
+                  <td className="py-2 pl-4 text-right">
+                    {/* Only show manual escalate for transactions that aren't already locked up */}
+                    {tx.routing_decision === "approve" && (
+                      <button
+                        onClick={() => window.location.href = `/safe-vault?escalate_tx=${tx.transaction_id}`}
+                        className="inline-flex items-center gap-1 rounded border border-risk-high/50 bg-risk-high/10 px-2 py-1 text-xs font-medium text-risk-high transition hover:bg-risk-high/20"
+                        title="Manually Escalate to Vault"
+                      >
+                        <ShieldAlert className="h-3 w-3" />
+                        Escalate
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -311,6 +311,5 @@ export const Overview: React.FC = () => {
     </div>
   );
 };
- 
+
 export default Overview;
- 
