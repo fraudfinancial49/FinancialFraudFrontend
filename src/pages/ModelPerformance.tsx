@@ -69,17 +69,25 @@ export const ModelPerformance: React.FC = () => {
       setShapLoading(true);
       setShapError(null);
       try {
-        const { data } = await apiClient.post<ShapExplanationResponse>(
+        // Swapped to <any> to allow the dynamic parser to inspect the payload safely
+        const { data } = await apiClient.post<any>(
           `/api/v1/transactions/${selectedTxId}/explain`
         );
         if (cancelled) return;
+        
+        // BULLETPROOF PARSER: Read the exact keys your Python backend is sending
+        const targetPayload = data?.explanation || data;
+        const rawFeatures = targetPayload?.contributions || targetPayload?.features || {};
+        const baseValue = typeof targetPayload?.base_value === "number" ? targetPayload.base_value : 0;
+
         const rows: ShapFeatureContribution[] = [
-          { feature: "base_value", impact: data.base_value },
-          ...Object.entries(data.features).map(([feature, impact]) => ({
+          { feature: "base_value", impact: baseValue },
+          ...Object.entries(rawFeatures).map(([feature, impact]) => ({
             feature,
             impact: Number(impact),
           })),
         ].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
+        
         setShapData(rows);
       } catch (err: any) {
         if (cancelled) return;
@@ -303,3 +311,4 @@ export const ModelPerformance: React.FC = () => {
 };
 
 export default ModelPerformance;
+      
