@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Lock, KeyRound, CheckCircle2, XCircle, PlusCircle, Loader2, AlertCircle, RefreshCw, ArrowUpRight } from "lucide-react";
+import { Lock, KeyRound, CheckCircle2, XCircle, PlusCircle, Loader2, AlertCircle, RefreshCw, ArrowUpRight, Send } from "lucide-react";
 import apiClient from "@/api/client";
 import { useActivity } from "@/store/ActivityContext";
 import type {
@@ -17,7 +17,6 @@ const STATUS_STYLES: Record<string, string> = {
   rejected: "bg-risk-high/15 text-risk-high border border-risk-high/20",
 };
 
-// Define the shape of your backend vault log response
 interface VaultCase {
   vault_id: string;
   transaction_id: string;
@@ -38,6 +37,7 @@ export const SafeVault: React.FC = () => {
   const [otpVaultId, setOtpVaultId] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpBusy, setOtpBusy] = useState(false);
+  const [otpActionType, setOtpActionType] = useState<"generating" | "verifying" | null>(null);
   const [otpMessage, setOtpMessage] = useState<GenericStatus | null>(null);
   const [otpError, setOtpError] = useState<string | null>(null);
 
@@ -68,7 +68,6 @@ export const SafeVault: React.FC = () => {
     }
   };
 
-  // Fetch immediately when the page loads
   useEffect(() => {
     fetchVaultLogs();
   }, []);
@@ -77,12 +76,43 @@ export const SafeVault: React.FC = () => {
   const handleLoadVault = (vaultId: string) => {
     setOtpVaultId(vaultId);
     setReviewVaultId(vaultId);
+    setOtpCode(""); // Reset OTP field for a fresh attempt
+    setOtpMessage(null);
+    setOtpError(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const submitOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // --- 2-Step OTP Workflow ---
+  const generateOtp = async () => {
+    if (!otpVaultId) {
+      setOtpError("Please enter a Vault ID first.");
+      return;
+    }
     setOtpBusy(true);
+    setOtpActionType("generating");
+    setOtpError(null);
+    setOtpMessage(null);
+    try {
+      // Sending an empty code triggers the backend generation logic
+      const payload: VaultOTPVerifyRequest = { vault_id: otpVaultId, otp_code: "" };
+      const { data } = await apiClient.post<GenericStatus>("/api/v1/vault/otp", payload);
+      setOtpMessage(data);
+    } catch (err: any) {
+      setOtpError(err?.response?.data?.detail || "Failed to generate OTP.");
+    } finally {
+      setOtpBusy(false);
+      setOtpActionType(null);
+    }
+  };
+
+  const verifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpCode) {
+      setOtpError("Please enter the 6-digit OTP code.");
+      return;
+    }
+    setOtpBusy(true);
+    setOtpActionType("verifying");
     setOtpError(null);
     setOtpMessage(null);
     try {
@@ -91,12 +121,14 @@ export const SafeVault: React.FC = () => {
       setOtpMessage(data);
       if (data.status === "otp_verified") {
         recordVaultOtpVerified(otpVaultId);
+        setOtpCode(""); // Clear the input on success
         await fetchVaultLogs(); 
       }
     } catch (err: any) {
-      setOtpError(err?.response?.data?.detail || "OTP request failed.");
+      setOtpError(err?.response?.data?.detail || "OTP verification failed.");
     } finally {
       setOtpBusy(false);
+      setOtpActionType(null);
     }
   };
 
@@ -154,13 +186,14 @@ export const SafeVault: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* OTP Panel */}
-        <form onSubmit={submitOtp} className="panel space-y-3 p-5">
+        {/* Step-Up OTP Panel */}
+        <form onSubmit={verifyOtp} className="panel space-y-3 p-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
             <KeyRound className="h-4 w-4 text-accent-teal" />
-            OTP Verification
+            2-Step OTP Verification
           </div>
           {otpError && <InlineError message={otpError} />}
+          
           <div>
             <label className="field-label">Vault ID</label>
             <input
@@ -171,7 +204,19 @@ export const SafeVault: React.FC = () => {
               required
             />
           </div>
-          <div>
+
+          {/* New Generate OTP Button */}
+          <button 
+            type="button" 
+            onClick={generateOtp} 
+            disabled={otpBusy || !otpVaultId} 
+            className="btn-secondary w-full justify-center"
+          >
+            {otpBusy && otpActionType === "generating" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {otpBusy && otpActionType === "generating" ? "Generating..." : "Step 1: Generate OTP"}
+          </button>
+
+          <div className="pt-2">
             <label className="field-label">6-digit OTP code</label>
             <input
               className="input-field font-mono tracking-widest"
@@ -179,17 +224,23 @@ export const SafeVault: React.FC = () => {
               onChange={(e) => setOtpCode(e.target.value)}
               placeholder="000000"
               maxLength={6}
-              required
             />
           </div>
-          <button type="submit" disabled={otpBusy} className="btn-primary w-full justify-center">
-            {otpBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
-            {otpBusy ? "Verifying…" : "Submit / Verify OTP"}
+
+          <button type="submit" disabled={otpBusy || !otpCode} className="btn-primary w-full justify-center">
+            {otpBusy && otpActionType === "verifying" ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+            {otpBusy && otpActionType === "verifying" ? "Verifying…" : "Step 2: Verify OTP"}
           </button>
+          
           {otpMessage && (
             <div className="rounded-lg border border-vault-700 bg-vault-850 p-3 text-xs text-slate-300">
               <p className="font-semibold text-slate-200">{otpMessage.status}</p>
               <p className="text-slate-500">{otpMessage.message}</p>
+              {otpMessage.data?.otp_code ? (
+                <p className="mt-1 font-mono text-accent-teal">
+                  Issued code (dev/demo only): {String(otpMessage.data.otp_code)}
+                </p>
+              ) : null}
             </div>
           )}
         </form>
@@ -314,7 +365,6 @@ export const SafeVault: React.FC = () => {
             <tbody>
               {logsLoading && vaultLogs.length === 0 ? (
                  <tr>
-                 {/* Updated colSpan from 5 to 6 to account for the new Action column */}
                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
                    <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
                    Querying database...
