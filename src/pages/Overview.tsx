@@ -6,6 +6,8 @@ import {
   ShieldAlert,
   RefreshCw,
   AlertCircle,
+  BrainCircuit,
+  X,
 } from "lucide-react";
 import {
   BarChart,
@@ -17,7 +19,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
-import { fetchAnalyticsSummary, fetchAnalyticsTimeseries, fetchTransactions } from "@/api/client";
+import apiClient, { fetchAnalyticsSummary, fetchAnalyticsTimeseries, fetchTransactions } from "@/api/client";
 import { RiskScoreBadge, RoutingBadge } from "@/components/RiskBadges";
 import type {
   TransactionAnalyticsSummary,
@@ -63,6 +65,12 @@ export const Overview: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // --- Inline SHAP Modal State ---
+  const [shapTxId, setShapTxId] = useState<string | null>(null);
+  const [shapData, setShapData] = useState<any[] | null>(null);
+  const [shapLoading, setShapLoading] = useState(false);
+  const [shapError, setShapError] = useState<string | null>(null);
+
   const applyPreset = (preset: PresetKey, days: number) => {
     setActivePreset(preset);
     const { start_date, end_date } = rangeForPreset(days);
@@ -101,13 +109,47 @@ export const Overview: React.FC = () => {
     loadDashboard();
   }, [loadDashboard]);
 
+  // --- Fetch Inline SHAP Data ---
+  const fetchExplanation = async (txId: string) => {
+    setShapTxId(txId);
+    setShapLoading(true);
+    setShapError(null);
+    setShapData(null);
+    try {
+      // Use the bulletproof parser we built for the Model page
+      const { data } = await apiClient.post<any>(`/api/v1/transactions/${txId}/explain`);
+      
+      const targetPayload = data?.explanation || data;
+      const rawFeatures = targetPayload?.contributions || targetPayload?.features || {};
+      const baseValue = typeof targetPayload?.base_value === "number" ? targetPayload.base_value : 0;
+
+      const rows = [
+        { feature: "base_value", impact: baseValue },
+        ...Object.entries(rawFeatures).map(([feature, impact]) => ({
+          feature,
+          impact: Number(impact),
+        })),
+      ].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
+      
+      setShapData(rows);
+    } catch (err: any) {
+      setShapError(
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Could not load SHAP explanation for this transaction."
+      );
+    } finally {
+      setShapLoading(false);
+    }
+  };
+
   const fraudRatePct = useMemo(
     () => (summary ? (summary.fraud_rate * 100).toFixed(2) : "—"),
     [summary]
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-50">Live Fraud Monitoring</h1>
@@ -289,8 +331,17 @@ export const Overview: React.FC = () => {
                       {tx.source === "manual_sandbox" ? "Sandbox" : "Auto"}
                     </span>
                   </td>
-                  <td className="py-2 pl-4 text-right">
-                    {/* Only show manual escalate for transactions that aren't already locked up */}
+                  <td className="py-2 pl-4 text-right whitespace-nowrap">
+                    {/* NEW Analyze Button */}
+                    <button
+                      onClick={() => fetchExplanation(tx.transaction_id)}
+                      className="inline-flex items-center gap-1 rounded border border-accent-indigo/50 bg-accent-indigo/10 px-2 py-1 text-xs font-medium text-accent-indigo transition hover:bg-accent-indigo/20 mr-2"
+                      title="Analyze AI Decision"
+                    >
+                      <BrainCircuit className="h-3 w-3" />
+                      Analyze
+                    </button>
+
                     {tx.routing_decision === "approve" && (
                       <button
                         onClick={() => window.location.href = `/safe-vault?escalate_tx=${tx.transaction_id}`}
@@ -308,6 +359,73 @@ export const Overview: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* --- INLINE SHAP MODAL --- */}
+      {shapTxId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-4xl rounded-xl border border-vault-700 bg-[#0e1424] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-vault-700/60 bg-vault-850 px-5 py-4">
+              <h3 className="font-semibold text-slate-200 flex items-center gap-2">
+                <BrainCircuit className="h-5 w-5 text-accent-teal" />
+                AI Explainability Breakdown
+                <span className="font-mono text-xs text-slate-500 font-normal ml-2 bg-vault-900 px-2 py-1 rounded">
+                  {shapTxId}
+                </span>
+              </h3>
+              <button onClick={() => setShapTxId(null)} className="text-slate-400 hover:text-slate-200 transition">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            {/* Content Body */}
+            <div className="p-6 h-[400px]">
+              {shapLoading && (
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-slate-500">
+                  <Loader2 className="h-6 w-6 animate-spin text-accent-teal" />
+                  Generating live SHAP contributions...
+                </div>
+              )}
+
+              {!shapLoading && shapError && (
+                <div className="flex h-full items-center justify-center">
+                  <div className="flex items-start gap-2 rounded-lg border border-risk-high/40 bg-risk-high/10 px-4 py-3 text-sm text-risk-high max-w-lg">
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                    <span>{shapError}</span>
+                  </div>
+                </div>
+              )}
+
+              {!shapLoading && !shapError && shapData && (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={shapData} layout="vertical" margin={{ left: 50, right: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" />
+                    <XAxis type="number" stroke="#64748b" fontSize={12} />
+                    <YAxis type="category" dataKey="feature" stroke="#64748b" fontSize={11} width={200} />
+                    <Tooltip contentStyle={{ background: "#0e1424", border: "1px solid #1c2540" }} />
+                    <Bar dataKey="impact" radius={[0, 3, 3, 0]} fill="#12b3a8" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* Footer Actions */}
+            <div className="flex items-center justify-end border-t border-vault-700/60 bg-vault-850 px-5 py-4 gap-3">
+              <button onClick={() => setShapTxId(null)} className="btn-secondary px-4">
+                Close
+              </button>
+              {/* Allow them to instantly escalate from right inside the popup! */}
+              <button
+                onClick={() => window.location.href = `/safe-vault?escalate_tx=${shapTxId}`}
+                className="btn-danger px-4"
+              >
+                <ShieldAlert className="h-4 w-4 mr-2" />
+                Escalate to Vault
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
