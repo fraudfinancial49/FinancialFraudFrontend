@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Lock, KeyRound, CheckCircle2, XCircle, PlusCircle, Loader2, AlertCircle } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Lock, KeyRound, CheckCircle2, XCircle, PlusCircle, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import apiClient from "@/api/client";
 import { useActivity } from "@/store/ActivityContext";
 import type {
@@ -17,8 +17,23 @@ const STATUS_STYLES: Record<string, string> = {
   rejected: "bg-risk-high/15 text-risk-high",
 };
 
+// Define the shape of your backend vault log response
+interface VaultCase {
+  vault_id: string;
+  transaction_id: string;
+  status: string;
+  reason: string | null;
+  created_at: string;
+}
+
 export const SafeVault: React.FC = () => {
-  const { vaultCases, recordVaultMove, recordVaultOtpVerified, recordVaultReview } = useActivity();
+  // We keep the context ONLY for global metric counters, but we drop 'vaultCases'
+  const { recordVaultMove, recordVaultOtpVerified, recordVaultReview } = useActivity();
+
+  // --- Production Persistent State ---
+  const [vaultLogs, setVaultLogs] = useState<VaultCase[]>([]);
+  const [logsLoading, setLogsLoading] = useState(true);
+  const [logsError, setLogsError] = useState<string | null>(null);
 
   // OTP panel
   const [otpVaultId, setOtpVaultId] = useState("");
@@ -40,6 +55,26 @@ export const SafeVault: React.FC = () => {
   const [escalateError, setEscalateError] = useState<string | null>(null);
   const [escalateResult, setEscalateResult] = useState<GenericStatus | null>(null);
 
+  // --- Real-time DB Fetching ---
+  const fetchVaultLogs = async () => {
+    setLogsLoading(true);
+    setLogsError(null);
+    try {
+      // Assuming your backend has an endpoint to list vault cases ordered by date desc
+      const { data } = await apiClient.get<VaultCase[]>("/api/v1/vault/cases");
+      setVaultLogs(data);
+    } catch (err: any) {
+      setLogsError("Failed to load historical vault logs from the database.");
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  // Fetch immediately when the page loads
+  useEffect(() => {
+    fetchVaultLogs();
+  }, []);
+
   const submitOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setOtpBusy(true);
@@ -47,10 +82,11 @@ export const SafeVault: React.FC = () => {
     setOtpMessage(null);
     try {
       const payload: VaultOTPVerifyRequest = { vault_id: otpVaultId, otp_code: otpCode };
-      const { data } = await apiClient.post<GenericStatus>("/vault/otp", payload);
+      const { data } = await apiClient.post<GenericStatus>("/api/v1/vault/otp", payload);
       setOtpMessage(data);
       if (data.status === "otp_verified") {
         recordVaultOtpVerified(otpVaultId);
+        await fetchVaultLogs(); // Refresh table immediately
       }
     } catch (err: any) {
       setOtpError(err?.response?.data?.detail || "OTP request failed.");
@@ -68,9 +104,10 @@ export const SafeVault: React.FC = () => {
         decision,
         reason: reviewReason || undefined,
       };
-      await apiClient.post<GenericStatus>("/vault/review", payload);
+      await apiClient.post<GenericStatus>("/api/v1/vault/review", payload);
       recordVaultReview(reviewVaultId, decision);
       setReviewReason("");
+      await fetchVaultLogs(); // Refresh table immediately
     } catch (err: any) {
       setReviewError(err?.response?.data?.detail || "Admin review failed.");
     } finally {
@@ -85,11 +122,12 @@ export const SafeVault: React.FC = () => {
     setEscalateResult(null);
     try {
       const payload: VaultMoveRequest = { transaction_id: escalateTxId, reason: escalateReason };
-      const { data } = await apiClient.post<GenericStatus>("/vault/move-to-vault", payload);
+      const { data } = await apiClient.post<GenericStatus>("/api/v1/vault/move-to-vault", payload);
       setEscalateResult(data);
       const vaultId = (data.data?.vault_id as string) ?? "";
       if (vaultId) {
         recordVaultMove(vaultId, escalateTxId, escalateReason);
+        await fetchVaultLogs(); // Refresh table immediately
       }
       setEscalateTxId("");
       setEscalateReason("");
@@ -111,6 +149,7 @@ export const SafeVault: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* OTP Panel */}
         <form onSubmit={submitOtp} className="panel space-y-3 p-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
             <KeyRound className="h-4 w-4 text-accent-teal" />
@@ -137,10 +176,6 @@ export const SafeVault: React.FC = () => {
               maxLength={6}
               required
             />
-            <p className="mt-1 text-[11px] text-slate-500">
-              Leave the code blank on first submission if you need the backend to issue a fresh
-              OTP for this vault record.
-            </p>
           </div>
           <button type="submit" disabled={otpBusy} className="btn-primary w-full justify-center">
             {otpBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
@@ -150,15 +185,11 @@ export const SafeVault: React.FC = () => {
             <div className="rounded-lg border border-vault-700 bg-vault-850 p-3 text-xs text-slate-300">
               <p className="font-semibold text-slate-200">{otpMessage.status}</p>
               <p className="text-slate-500">{otpMessage.message}</p>
-              {otpMessage.data?.otp_code ? (
-                <p className="mt-1 font-mono text-accent-teal">
-                  Issued code (dev/demo only): {String(otpMessage.data.otp_code)}
-                </p>
-              ) : null}
             </div>
           )}
         </form>
 
+        {/* Review Panel */}
         <div className="panel space-y-3 p-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
             <Lock className="h-4 w-4 text-risk-moderate" />
@@ -191,11 +222,7 @@ export const SafeVault: React.FC = () => {
               onClick={() => submitReview("approve")}
               className="btn-success flex-1 justify-center"
             >
-              {reviewBusy === "approve" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCircle2 className="h-4 w-4" />
-              )}
+              {reviewBusy === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Release
             </button>
             <button
@@ -204,16 +231,13 @@ export const SafeVault: React.FC = () => {
               onClick={() => submitReview("reject")}
               className="btn-danger flex-1 justify-center"
             >
-              {reviewBusy === "reject" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <XCircle className="h-4 w-4" />
-              )}
+              {reviewBusy === "reject" ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
               Reject
             </button>
           </div>
         </div>
 
+        {/* Escalation Panel */}
         <form onSubmit={submitEscalation} className="panel space-y-3 p-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
             <PlusCircle className="h-4 w-4 text-accent-indigo" />
@@ -253,13 +277,26 @@ export const SafeVault: React.FC = () => {
         </form>
       </div>
 
+      {/* Production Database Table */}
       <div className="panel">
-        <div className="panel-header">
-          <h2 className="text-sm font-semibold text-slate-200">Vault Case Log (session)</h2>
+        <div className="panel-header flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-200">Vault Case Log (Persistent Database)</h2>
+          <button onClick={fetchVaultLogs} disabled={logsLoading} className="btn-secondary py-1 px-2 text-xs">
+            {logsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            Refresh
+          </button>
         </div>
+        
+        {logsError && (
+          <div className="p-4 border-b border-risk-high/40 bg-risk-high/10 text-xs text-risk-high flex items-center gap-2">
+            <AlertCircle className="h-4 w-4" />
+            {logsError}
+          </div>
+        )}
+
         <div className="max-h-96 overflow-y-auto">
           <table className="w-full text-left text-sm">
-            <thead className="sticky top-0 bg-vault-900 text-xs uppercase tracking-wide text-slate-500">
+            <thead className="sticky top-0 bg-vault-900 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
               <tr>
                 <th className="px-4 py-2">Vault ID</th>
                 <th className="px-4 py-2">Transaction ID</th>
@@ -269,28 +306,36 @@ export const SafeVault: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {vaultCases.length === 0 && (
+              {logsLoading && vaultLogs.length === 0 ? (
+                 <tr>
+                 <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                   <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
+                   Querying database...
+                 </td>
+               </tr>
+              ) : vaultLogs.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
-                    No Safe Vault cases recorded this session yet.
+                    No Safe Vault cases exist in the database yet.
                   </td>
                 </tr>
+              ) : (
+                vaultLogs.map((v) => (
+                  <tr key={v.vault_id} className="border-t border-vault-700/60 hover:bg-vault-800/30 transition-colors">
+                    <td className="px-4 py-2 font-mono text-xs text-slate-300">{v.vault_id.slice(0, 12)}…</td>
+                    <td className="px-4 py-2 font-mono text-xs text-slate-300">
+                      {v.transaction_id.slice(0, 12)}…
+                    </td>
+                    <td className="px-4 py-2">
+                      <span className={`badge ${STATUS_STYLES[v.status] || "bg-slate-800 text-slate-300"}`}>{v.status}</span>
+                    </td>
+                    <td className="px-4 py-2 text-slate-400">{v.reason ?? "—"}</td>
+                    <td className="px-4 py-2 text-slate-400">
+                      {new Date(v.created_at).toLocaleString()}
+                    </td>
+                  </tr>
+                ))
               )}
-              {vaultCases.map((v) => (
-                <tr key={v.vault_id} className="border-t border-vault-700/60">
-                  <td className="px-4 py-2 font-mono text-xs text-slate-400">{v.vault_id.slice(0, 12)}…</td>
-                  <td className="px-4 py-2 font-mono text-xs text-slate-400">
-                    {v.transaction_id.slice(0, 12)}…
-                  </td>
-                  <td className="px-4 py-2">
-                    <span className={`badge ${STATUS_STYLES[v.status]}`}>{v.status}</span>
-                  </td>
-                  <td className="px-4 py-2 text-slate-400">{v.reason ?? "—"}</td>
-                  <td className="px-4 py-2 text-slate-500">
-                    {new Date(v.created_at).toLocaleTimeString()}
-                  </td>
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>
