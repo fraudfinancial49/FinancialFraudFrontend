@@ -4,9 +4,6 @@ import apiClient, { fetchTransactions } from "@/api/client";
 import { useToast } from "@/components/Toast";
 import type { ConfirmedOutcome, FeedbackSubmitRequest, RetrainTriggerResponse, TransactionListItem } from "@/types/api";
 
-// Admin-only Feedback Queue / Review panel. Lets an analyst confirm the real
-// outcome of a database transaction (feeding the label-collection loop) 
-// and lets an admin trigger a full backend retrain + cache flush.
 export const AdminFeedbackQueue: React.FC = () => {
   const { pushToast, updateToast } = useToast();
 
@@ -52,7 +49,8 @@ export const AdminFeedbackQueue: React.FC = () => {
         transaction_id: transactionId,
         confirmed_outcome: outcome,
       };
-      await apiClient.post("/api/v1/feedback", payload);
+      // Fixed endpoint to align with the admin.py router prefix
+      await apiClient.post("/api/v1/admin/feedback", payload);
       setSubmitted((prev) => ({ ...prev, [transactionId]: outcome }));
       pushToast("success", `Feedback recorded for ${transactionId.slice(0, 10)}…`);
     } catch (err: any) {
@@ -67,10 +65,11 @@ export const AdminFeedbackQueue: React.FC = () => {
 
   const handleRetrain = async () => {
     setRetraining(true);
-    const toastId = pushToast("loading", "Retraining model pipeline & flushing cached scores…");
+    const toastId = pushToast("loading", "Evaluating metrics & retraining model pipeline...");
     try {
-      await apiClient.post<RetrainTriggerResponse>("/api/v1/admin/retrain");
-      updateToast(toastId, "success", "Model Pipeline Retrained & Cached Scores Flushed Successfully!");
+      const { data } = await apiClient.post<RetrainTriggerResponse>("/api/v1/admin/retrain");
+      // Display the actual message from the backend showing whether the model was kept or discarded
+      updateToast(toastId, "success", data.message);
     } catch (err: any) {
       updateToast(
         toastId,
@@ -188,7 +187,7 @@ export const AdminFeedbackQueue: React.FC = () => {
       <div className="flex items-start gap-2 rounded-lg border border-vault-700 bg-vault-850 px-3 py-2 text-xs text-slate-500">
         <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-teal" />
         <span>
-          This panel calls real backend routes (<code className="text-slate-400">POST /api/v1/feedback</code>{" "}
+          This panel calls real backend routes (<code className="text-slate-400">POST /api/v1/admin/feedback</code>{" "}
           and <code className="text-slate-400">POST /api/v1/admin/retrain</code>). This creates a complete end-to-end continuous learning loop.
         </span>
       </div>
