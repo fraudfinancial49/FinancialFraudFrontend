@@ -61,6 +61,8 @@ export const SafeVault: React.FC = () => {
   const [escalateBusy, setEscalateBusy] = useState(false);
   const [escalateError, setEscalateError] = useState<string | null>(null);
   const [escalateResult, setEscalateResult] = useState<GenericStatus | null>(null);
+  // True only when the CURRENT browser session just successfully escalated this transaction.
+  const [escalateSuccess, setEscalateSuccess] = useState(false);
 
   // --- Real-time DB Fetching ---
   const fetchVaultLogs = async () => {
@@ -81,12 +83,21 @@ export const SafeVault: React.FC = () => {
   }, []);
 
   // --- UX Helper: Auto-fill forms from table ---
-  const handleLoadVault = (vaultId: string) => {
-    setOtpVaultId(vaultId);
-    setReviewVaultId(vaultId);
+  const handleLoadVault = (vault: VaultCase) => {
+    setOtpVaultId(vault.vault_id);
+    setReviewVaultId(vault.vault_id);
     setOtpCode(""); // Reset OTP field for a fresh attempt
     setOtpMessage(null);
     setOtpError(null);
+
+    // Also populate the Manual Escalation panel with the linked transaction.
+    // Loading a (possibly different) case resets the "just escalated this session" flag.
+    setEscalateTxId(vault.transaction_id);
+    setEscalateReason("");
+    setEscalateError(null);
+    setEscalateResult(null);
+    setEscalateSuccess(false);
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -173,7 +184,7 @@ export const SafeVault: React.FC = () => {
         recordVaultMove(vaultId, escalateTxId, escalateReason);
         await fetchVaultLogs(); 
       }
-      setEscalateTxId("");
+      setEscalateSuccess(true);
       setEscalateReason("");
     } catch (err: any) {
       setEscalateError(err?.response?.data?.detail || "Manual escalation failed.");
@@ -187,6 +198,13 @@ export const SafeVault: React.FC = () => {
   const isOtpResolved = activeReviewCase?.status === "otp_verified";
   const isAdminResolved = activeReviewCase?.status === "released" || activeReviewCase?.status === "rejected";
   const isPanelLocked = isOtpResolved || isAdminResolved;
+
+  // Manual Escalation locking: locked if this transaction already has a vault case,
+  // or if the current session just successfully escalated it.
+  // These are two distinct situations and are surfaced with different messaging below.
+  const activeEscalateCase = vaultLogs.find(v => v.transaction_id === escalateTxId);
+  const isAlreadyEscalated = !!activeEscalateCase;
+  const isEscalateLocked = escalateSuccess || isAlreadyEscalated;
 
   return (
     <div className="space-y-6">
@@ -343,26 +361,63 @@ export const SafeVault: React.FC = () => {
             <input
               className="input-field"
               value={escalateTxId}
-              onChange={(e) => setEscalateTxId(e.target.value)}
+              onChange={(e) => {
+                setEscalateTxId(e.target.value);
+                setEscalateError(null);
+                setEscalateResult(null);
+              }}
               placeholder="tx_…"
+              disabled={escalateBusy}
               required
             />
           </div>
-          <div>
-            <label className="field-label">Reason</label>
-            <textarea
-              className="input-field min-h-[84px] resize-none"
-              value={escalateReason}
-              onChange={(e) => setEscalateReason(e.target.value)}
-              placeholder="Why is this transaction being escalated to the vault?"
-              required
-            />
-          </div>
-          <button type="submit" disabled={escalateBusy} className="btn-secondary w-full justify-center">
+
+          {/* Dynamic Locking UI */}
+          {escalateSuccess ? (
+            <div className="rounded-lg border border-accent-teal/30 bg-accent-teal/10 p-4 text-sm text-accent-teal">
+              <div className="flex items-center gap-2 font-semibold">
+                <CheckCircle2 className="h-4 w-4" />
+                Transaction Successfully Escalated
+              </div>
+              <p className="mt-1 text-xs text-accent-teal/80">
+                This transaction has been moved into the Safe Vault. No further manual escalation
+                is required.
+              </p>
+            </div>
+          ) : isAlreadyEscalated ? (
+            <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-400">
+              <div className="flex items-center gap-2 font-semibold">
+                <CheckCircle2 className="h-4 w-4" />
+                Transaction Already Exists in Safe Vault
+              </div>
+              <p className="mt-1 text-xs">
+                This transaction has already been escalated previously. No further manual
+                escalation is required.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label className="field-label">Reason</label>
+              <textarea
+                className="input-field min-h-[84px] resize-none"
+                value={escalateReason}
+                onChange={(e) => setEscalateReason(e.target.value)}
+                placeholder="Why is this transaction being escalated to the vault?"
+                disabled={escalateBusy}
+                required
+              />
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={escalateBusy || isEscalateLocked}
+            className="btn-secondary w-full justify-center"
+          >
             {escalateBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
             {escalateBusy ? "Escalating…" : "Move to Vault"}
           </button>
-          {escalateResult && (
+          {escalateResult && !isEscalateLocked && (
             <div className="rounded-lg border border-vault-700 bg-vault-850 p-3 text-xs text-slate-300">
               <p className="font-semibold text-slate-200">{escalateResult.status}</p>
               <p className="text-slate-500">{escalateResult.message}</p>
@@ -435,7 +490,7 @@ export const SafeVault: React.FC = () => {
                     <td className="px-4 py-2 text-right">
                       {v.status === "frozen" && (
                         <button
-                          onClick={() => handleLoadVault(v.vault_id)}
+                          onClick={() => handleLoadVault(v)}
                           className="inline-flex items-center gap-1 rounded border border-vault-600 bg-vault-800 px-2 py-1 text-xs font-medium text-slate-300 transition hover:border-accent-indigo hover:bg-accent-indigo/20 hover:text-accent-indigo"
                           title="Load ID into forms"
                         >
