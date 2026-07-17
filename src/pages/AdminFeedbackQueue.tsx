@@ -49,7 +49,6 @@ export const AdminFeedbackQueue: React.FC = () => {
         transaction_id: transactionId,
         confirmed_outcome: outcome,
       };
-      // Fixed endpoint to align with the admin.py router prefix
       await apiClient.post("/api/v1/admin/feedback", payload);
       setSubmitted((prev) => ({ ...prev, [transactionId]: outcome }));
       pushToast("success", `Feedback recorded for ${transactionId.slice(0, 10)}…`);
@@ -68,14 +67,18 @@ export const AdminFeedbackQueue: React.FC = () => {
     const toastId = pushToast("loading", "Evaluating metrics & retraining model pipeline...");
     try {
       const { data } = await apiClient.post<RetrainTriggerResponse>("/api/v1/admin/retrain");
-      // Display the actual message from the backend showing whether the model was kept or discarded
-      updateToast(toastId, "success", data.message);
+      // FIX: Add safety check and fallback string to satisfy strict TypeScript
+      if (toastId) {
+        updateToast(toastId, "success", data.message || "Model Pipeline Retrained Successfully!");
+      }
     } catch (err: any) {
-      updateToast(
-        toastId,
-        "error",
-        err?.response?.data?.detail || "Retrain request failed. Confirm /api/v1/admin/retrain is deployed."
-      );
+      if (toastId) {
+        updateToast(
+          toastId,
+          "error",
+          err?.response?.data?.detail || "Retrain request failed. Confirm /api/v1/admin/retrain is deployed."
+        );
+      }
     } finally {
       setRetraining(false);
     }
