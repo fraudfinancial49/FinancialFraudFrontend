@@ -1,27 +1,55 @@
-import React, { useMemo, useState } from "react";
-import { Users, PlayCircle, Loader2, AlertCircle, Info } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Users, PlayCircle, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import apiClient from "@/api/client";
-import { useActivity } from "@/store/ActivityContext";
+import { useToast } from "@/components/Toast";
 import type { AttackerProfilingResult, GenericStatus } from "@/types/api";
 
 const CLUSTER_LABELS = ["Automated Bot", "Slow Prober", "Credential Stuffer", "Opportunistic Tester"];
 
+interface DBAttackerProfile {
+  browser_fingerprint: string;
+  simulated_ip: string | null;
+  total_sessions: number;
+  avg_session_duration_seconds: number;
+  avg_events_per_session: number;
+  cluster_label: string;
+  threat_score: number;
+  last_seen_at: string;
+}
+
 export const AttackerProfiles: React.FC = () => {
-  const { profilingRuns, recordProfilingRun } = useActivity();
+  const { pushToast } = useToast();
+  
+  const [profiles, setProfiles] = useState<DBAttackerProfile[]>([]);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const latestRun = profilingRuns[0] ?? null;
+  const fetchProfiles = async () => {
+    setLoading(true);
+    try {
+      const { data } = await apiClient.get<DBAttackerProfile[]>("/api/v1/admin/attacker-profiles");
+      setProfiles(data);
+    } catch (err) {
+      console.error("Failed to load profiles");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProfiles();
+  }, []);
 
   const runProfiling = async () => {
     setBusy(true);
     setError(null);
     try {
       const { data } = await apiClient.post<GenericStatus<AttackerProfilingResult>>(
-        "/admin/run-attacker-profiling"
+        "/api/v1/admin/run-attacker-profiling"
       );
-      const result = (data.data ?? { status: data.status, n_profiles_updated: 0 }) as AttackerProfilingResult;
-      recordProfilingRun(result);
+      pushToast("success", data.message || "Attacker profiling job completed.");
+      await fetchProfiles(); // Refresh the table with new clusters
     } catch (err: any) {
       setError(err?.response?.data?.detail || "Failed to trigger the attacker profiling job.");
     } finally {
@@ -29,26 +57,18 @@ export const AttackerProfiles: React.FC = () => {
     }
   };
 
-  const statusStyle = useMemo(() => {
-    if (!latestRun) return "bg-vault-800 text-slate-400";
-    return latestRun.result.status === "completed"
-      ? "bg-risk-low/15 text-risk-low"
-      : "bg-risk-moderate/15 text-risk-moderate";
-  }, [latestRun]);
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-50">Attacker Profiles</h1>
           <p className="text-sm text-slate-500">
-            Batch K-Means clustering over honeypot telemetry (session count, average session
-            duration, average events per session) to classify captured attacker fingerprints.
+            Batch K-Means clustering over honeypot telemetry to classify captured attacker fingerprints.
           </p>
         </div>
         <button onClick={runProfiling} disabled={busy} className="btn-primary shrink-0">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
-          {busy ? "Running…" : "Run Attacker Profiling"}
+          {busy ? "Running Job…" : "Run Attacker Profiling"}
         </button>
       </div>
 
@@ -58,27 +78,6 @@ export const AttackerProfiles: React.FC = () => {
           <span>{error}</span>
         </div>
       )}
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="kpi-card">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Latest Job Status</span>
-          <span className={`badge w-fit ${statusStyle}`}>
-            {latestRun ? latestRun.result.status.replace(/_/g, " ") : "not run yet"}
-          </span>
-        </div>
-        <div className="kpi-card">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Profiles Updated</span>
-          <span className="text-2xl font-bold text-slate-50">
-            {latestRun ? latestRun.result.n_profiles_updated : "—"}
-          </span>
-        </div>
-        <div className="kpi-card">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Clusters (k)</span>
-          <span className="text-2xl font-bold text-slate-50">
-            {latestRun?.result.n_clusters ?? "—"}
-          </span>
-        </div>
-      </div>
 
       <div className="panel p-5">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-200">
@@ -95,53 +94,47 @@ export const AttackerProfiles: React.FC = () => {
             </div>
           ))}
         </div>
-        <div className="mt-4 flex items-start gap-2 rounded-lg border border-vault-700 bg-vault-850 px-3 py-2 text-xs text-slate-500">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-teal" />
-          <span>
-            Cluster labels are assigned by ranking K-Means clusters on mean events-per-session
-            (descending) and mapping them onto this fixed four-label taxonomy, exactly as
-            implemented in <code className="text-slate-400">threat_intel.run_attacker_profiling</code>.
-            The current backend does not expose a GET endpoint to list individual attacker
-            profile records, so this panel reflects job-level results returned by each run —
-            wiring a `/admin/attacker-profiles` list endpoint is a recommended follow-up.
-          </span>
-        </div>
       </div>
 
       <div className="panel">
-        <div className="panel-header">
-          <h2 className="text-sm font-semibold text-slate-200">Job History (session)</h2>
+        <div className="panel-header flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-200">Identified Attacker Database</h2>
+          <button onClick={fetchProfiles} disabled={loading} className="btn-secondary py-1 px-2 text-xs">
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            Refresh DB
+          </button>
         </div>
-        <div className="max-h-72 overflow-y-auto">
+        <div className="max-h-96 overflow-y-auto">
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 bg-vault-900 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Profiles Updated</th>
-                <th className="px-4 py-2">Clusters</th>
-                <th className="px-4 py-2">Time</th>
+                <th className="px-4 py-2">Fingerprint</th>
+                <th className="px-4 py-2">Classification</th>
+                <th className="px-4 py-2">Threat Score</th>
+                <th className="px-4 py-2">Sessions</th>
+                <th className="px-4 py-2">Events/Session</th>
+                <th className="px-4 py-2">Last Seen</th>
               </tr>
             </thead>
             <tbody>
-              {profilingRuns.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
-                    No profiling jobs triggered this session yet.
-                  </td>
-                </tr>
+              {loading && profiles.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+              ) : profiles.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No attacker profiles mapped yet. Trigger a run above.</td></tr>
+              ) : (
+                profiles.map((p) => (
+                  <tr key={p.browser_fingerprint} className="border-t border-vault-700/60 hover:bg-vault-800/30">
+                    <td className="px-4 py-2 font-mono text-slate-300">{p.browser_fingerprint.slice(0, 16)}…</td>
+                    <td className="px-4 py-2">
+                      <span className="badge bg-vault-800 text-slate-400">{p.cluster_label}</span>
+                    </td>
+                    <td className="px-4 py-2 text-risk-high font-bold">{p.threat_score.toFixed(1)}</td>
+                    <td className="px-4 py-2 text-slate-400">{p.total_sessions}</td>
+                    <td className="px-4 py-2 text-slate-400">{p.avg_events_per_session.toFixed(1)}</td>
+                    <td className="px-4 py-2 text-slate-500">{new Date(p.last_seen_at).toLocaleDateString()}</td>
+                  </tr>
+                ))
               )}
-              {profilingRuns.map((run) => (
-                <tr key={run.id} className="border-t border-vault-700/60">
-                  <td className="px-4 py-2 capitalize text-slate-300">
-                    {run.result.status.replace(/_/g, " ")}
-                  </td>
-                  <td className="px-4 py-2 text-slate-300">{run.result.n_profiles_updated}</td>
-                  <td className="px-4 py-2 text-slate-300">{run.result.n_clusters ?? "—"}</td>
-                  <td className="px-4 py-2 text-slate-500">
-                    {new Date(run.timestamp).toLocaleTimeString()}
-                  </td>
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>
@@ -152,16 +145,11 @@ export const AttackerProfiles: React.FC = () => {
 
 function clusterDescription(label: string): string {
   switch (label) {
-    case "Automated Bot":
-      return "High event rate, minimal think-time between actions — scripted or headless traffic.";
-    case "Slow Prober":
-      return "Long session duration, low event density — deliberate, manual reconnaissance.";
-    case "Credential Stuffer":
-      return "Repeated sessions across many fingerprints — bulk credential testing pattern.";
-    case "Opportunistic Tester":
-      return "Sparse, low-signal sessions — the default label until enough honeypot history accrues.";
-    default:
-      return "";
+    case "Automated Bot": return "High event rate, minimal think-time between actions.";
+    case "Slow Prober": return "Long session duration, low event density — manual reconnaissance.";
+    case "Credential Stuffer": return "Repeated sessions across many fingerprints — bulk testing.";
+    case "Opportunistic Tester": return "Sparse, low-signal sessions — default prior to enough history.";
+    default: return "";
   }
 }
 

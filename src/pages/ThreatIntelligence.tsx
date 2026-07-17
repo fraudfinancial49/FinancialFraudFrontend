@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Bug, PlayCircle, ArrowRightCircle, StopCircle, Loader2, AlertCircle } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Bug, PlayCircle, ArrowRightCircle, StopCircle, Loader2, AlertCircle, RefreshCw, ArrowUpRight } from "lucide-react";
 import apiClient from "@/api/client";
 import type {
   GenericStatus,
@@ -8,17 +8,20 @@ import type {
   HoneypotStartRequest,
 } from "@/types/api";
 
-interface SessionLogEntry {
-  id: string;
-  timestamp: string;
-  action: "start" | "advance" | "close";
-  status: string;
-  message?: string;
-  sessionId?: string;
+interface DBHoneypotSession {
+  session_id: string;
+  simulated_ip: string;
+  browser_fingerprint: string;
+  stage: string;
+  started_at: string;
+  closed_at: string | null;
+  events_count: number;
 }
 
 export const ThreatIntelligence: React.FC = () => {
-  const [log, setLog] = useState<SessionLogEntry[]>([]);
+  // --- Persistent DB State ---
+  const [dbSessions, setDbSessions] = useState<DBHoneypotSession[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Start
   const [startTxId, setStartTxId] = useState("");
@@ -29,22 +32,29 @@ export const ThreatIntelligence: React.FC = () => {
   const [startBusy, setStartBusy] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
-  // Advance
+  // Advance & Close
   const [sessionId, setSessionId] = useState("");
   const [eventType, setEventType] = useState("view_balance");
   const [advanceBusy, setAdvanceBusy] = useState(false);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
-
-  // Close
   const [closeBusy, setCloseBusy] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
 
-  const pushLog = (entry: Omit<SessionLogEntry, "id" | "timestamp">) => {
-    setLog((prev) => [
-      { ...entry, id: `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, timestamp: new Date().toISOString() },
-      ...prev,
-    ]);
+  const fetchSessions = async () => {
+    setLoading(true);
+    try {
+      const { data } = await apiClient.get<DBHoneypotSession[]>("/api/v1/honeypot/sessions");
+      setDbSessions(data);
+    } catch (err) {
+      console.error("Failed to load honeypot sessions.");
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    fetchSessions();
+  }, []);
 
   const handleStart = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,10 +68,10 @@ export const ThreatIntelligence: React.FC = () => {
         browser_fingerprint: fingerprint || undefined,
         risk_score_at_entry: riskAtEntry,
       };
-      const { data } = await apiClient.post<GenericStatus>("/honeypot/start", payload);
+      const { data } = await apiClient.post<GenericStatus>("/api/v1/honeypot/start", payload);
       const newSessionId = (data.data?.session_id as string) ?? "";
       if (newSessionId) setSessionId(newSessionId);
-      pushLog({ action: "start", status: data.status, message: data.message, sessionId: newSessionId });
+      await fetchSessions(); // Refresh DB view
     } catch (err: any) {
       setStartError(err?.response?.data?.detail || "Failed to start honeypot session.");
     } finally {
@@ -75,8 +85,8 @@ export const ThreatIntelligence: React.FC = () => {
     setAdvanceError(null);
     try {
       const payload: HoneypotAdvanceRequest = { session_id: sessionId, event_type: eventType };
-      const { data } = await apiClient.post<GenericStatus>("/honeypot/advance", payload);
-      pushLog({ action: "advance", status: data.status, message: data.message, sessionId });
+      await apiClient.post<GenericStatus>("/api/v1/honeypot/advance", payload);
+      await fetchSessions(); // Refresh DB view
     } catch (err: any) {
       setAdvanceError(err?.response?.data?.detail || "Failed to advance honeypot session.");
     } finally {
@@ -89,8 +99,9 @@ export const ThreatIntelligence: React.FC = () => {
     setCloseError(null);
     try {
       const payload: HoneypotCloseRequest = { session_id: sessionId };
-      const { data } = await apiClient.post<GenericStatus>("/honeypot/close", payload);
-      pushLog({ action: "close", status: data.status, message: data.message, sessionId });
+      await apiClient.post<GenericStatus>("/api/v1/honeypot/close", payload);
+      setSessionId(""); // Clear selection
+      await fetchSessions(); // Refresh DB view
     } catch (err: any) {
       setCloseError(err?.response?.data?.detail || "Failed to close honeypot session.");
     } finally {
@@ -109,48 +120,29 @@ export const ThreatIntelligence: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* START FORM */}
         <form onSubmit={handleStart} className="panel space-y-3 p-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
-            <PlayCircle className="h-4 w-4 text-accent-teal" />
-            Start Session
+            <PlayCircle className="h-4 w-4 text-accent-teal" /> Start Session
           </div>
           {startError && <InlineError message={startError} />}
-          <div>
-            <label className="field-label">Transaction ID (optional)</label>
-            <input className="input-field" value={startTxId} onChange={(e) => setStartTxId(e.target.value)} placeholder="tx_…" />
-          </div>
           <div>
             <label className="field-label">Simulated IP</label>
             <input className="input-field" value={simulatedIp} onChange={(e) => setSimulatedIp(e.target.value)} />
           </div>
           <div>
-            <label className="field-label">User agent</label>
-            <input className="input-field" value={userAgent} onChange={(e) => setUserAgent(e.target.value)} />
-          </div>
-          <div>
-            <label className="field-label">Browser fingerprint (optional)</label>
+            <label className="field-label">Browser fingerprint</label>
             <input className="input-field" value={fingerprint} onChange={(e) => setFingerprint(e.target.value)} placeholder="fp_…" />
           </div>
-          <div>
-            <label className="field-label">Risk score at entry</label>
-            <input
-              type="number"
-              step="0.1"
-              className="input-field"
-              value={riskAtEntry}
-              onChange={(e) => setRiskAtEntry(Number(e.target.value))}
-            />
-          </div>
           <button type="submit" disabled={startBusy} className="btn-primary w-full justify-center">
-            {startBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
-            Start
+            {startBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />} Start
           </button>
         </form>
 
+        {/* ADVANCE FORM */}
         <form onSubmit={handleAdvance} className="panel space-y-3 p-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
-            <ArrowRightCircle className="h-4 w-4 text-accent-indigo" />
-            Advance Session
+            <ArrowRightCircle className="h-4 w-4 text-accent-indigo" /> Advance Session
           </div>
           {advanceError && <InlineError message={advanceError} />}
           <div>
@@ -162,75 +154,65 @@ export const ThreatIntelligence: React.FC = () => {
             <select className="input-field" value={eventType} onChange={(e) => setEventType(e.target.value)}>
               <option value="view_balance">view_balance</option>
               <option value="attempt_transfer">attempt_transfer</option>
-              <option value="view_statement">view_statement</option>
               <option value="password_reset_attempt">password_reset_attempt</option>
-              <option value="page_navigation">page_navigation</option>
             </select>
           </div>
-          <button type="submit" disabled={advanceBusy} className="btn-secondary w-full justify-center">
-            {advanceBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRightCircle className="h-4 w-4" />}
-            Record Event
+          <button type="submit" disabled={advanceBusy || !sessionId} className="btn-secondary w-full justify-center">
+            {advanceBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRightCircle className="h-4 w-4" />} Record Event
           </button>
         </form>
 
+        {/* CLOSE FORM */}
         <div className="panel space-y-3 p-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
-            <StopCircle className="h-4 w-4 text-risk-high" />
-            Close Session
+            <StopCircle className="h-4 w-4 text-risk-high" /> Close Session
           </div>
           {closeError && <InlineError message={closeError} />}
           <p className="text-xs text-slate-500">
-            Closes session <span className="font-mono text-slate-300">{sessionId || "(none selected)"}</span> and
-            finalizes its captured event trail for the batch attacker-profiling job.
+            Closes session <span className="font-mono text-slate-300">{sessionId || "(none)"}</span>.
           </p>
-          <button
-            type="button"
-            disabled={closeBusy || !sessionId}
-            onClick={handleClose}
-            className="btn-danger w-full justify-center"
-          >
-            {closeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <StopCircle className="h-4 w-4" />}
-            Close Session
+          <button type="button" disabled={closeBusy || !sessionId} onClick={handleClose} className="btn-danger w-full justify-center">
+            {closeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <StopCircle className="h-4 w-4" />} Close Session
           </button>
         </div>
       </div>
 
+      {/* REAL DATABASE TABLE */}
       <div className="panel">
-        <div className="panel-header">
+        <div className="panel-header flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
-            <Bug className="h-4 w-4 text-risk-high" />
-            Honeypot Activity Log (session)
+            <Bug className="h-4 w-4 text-risk-high" /> Persistent Honeypot Logs
           </h2>
+          <button onClick={fetchSessions} disabled={loading} className="btn-secondary py-1 px-2 text-xs">
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Refresh DB
+          </button>
         </div>
         <div className="max-h-96 overflow-y-auto">
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 bg-vault-900 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-2">Action</th>
                 <th className="px-4 py-2">Session ID</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Message</th>
-                <th className="px-4 py-2">Time</th>
+                <th className="px-4 py-2">Fingerprint</th>
+                <th className="px-4 py-2">Stage</th>
+                <th className="px-4 py-2">Events</th>
+                <th className="px-4 py-2">Started</th>
+                <th className="px-4 py-2 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
-              {log.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
-                    No honeypot lifecycle actions recorded this session yet.
-                  </td>
-                </tr>
-              )}
-              {log.map((entry) => (
-                <tr key={entry.id} className="border-t border-vault-700/60">
-                  <td className="px-4 py-2 capitalize text-slate-300">{entry.action}</td>
-                  <td className="px-4 py-2 font-mono text-xs text-slate-400">
-                    {entry.sessionId ? `${entry.sessionId.slice(0, 12)}…` : "—"}
-                  </td>
-                  <td className="px-4 py-2 text-slate-300">{entry.status}</td>
-                  <td className="px-4 py-2 text-slate-500">{entry.message ?? "—"}</td>
-                  <td className="px-4 py-2 text-slate-500">
-                    {new Date(entry.timestamp).toLocaleTimeString()}
+              {dbSessions.map((s) => (
+                <tr key={s.session_id} className="border-t border-vault-700/60">
+                  <td className="px-4 py-2 font-mono text-xs text-slate-400">{s.session_id.slice(0, 12)}…</td>
+                  <td className="px-4 py-2 text-slate-300">{s.browser_fingerprint || "—"}</td>
+                  <td className="px-4 py-2 capitalize text-slate-300">{s.stage}</td>
+                  <td className="px-4 py-2 text-slate-300">{s.events_count}</td>
+                  <td className="px-4 py-2 text-slate-500">{new Date(s.started_at).toLocaleString()}</td>
+                  <td className="px-4 py-2 text-right">
+                    {s.stage !== "closed" && (
+                      <button onClick={() => { setSessionId(s.session_id); window.scrollTo(0,0); }} className="text-accent-indigo hover:text-white text-xs inline-flex items-center gap-1">
+                        <ArrowUpRight className="h-3 w-3" /> Load
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
