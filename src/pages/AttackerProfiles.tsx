@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Users, PlayCircle, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { Users, PlayCircle, Loader2, AlertCircle, RefreshCw, Info } from "lucide-react";
 import apiClient from "@/api/client";
 import { useToast } from "@/components/Toast";
 import type { AttackerProfilingResult, GenericStatus } from "@/types/api";
@@ -49,7 +49,7 @@ export const AttackerProfiles: React.FC = () => {
         "/api/v1/admin/run-attacker-profiling"
       );
       pushToast("success", data.message || "Attacker profiling job completed.");
-      await fetchProfiles(); // Refresh the table with new clusters
+      await fetchProfiles();
     } catch (err: any) {
       setError(err?.response?.data?.detail || "Failed to trigger the attacker profiling job.");
     } finally {
@@ -63,13 +63,20 @@ export const AttackerProfiles: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold text-slate-50">Attacker Profiles</h1>
           <p className="text-sm text-slate-500">
-            Batch K-Means clustering over honeypot telemetry to classify captured attacker fingerprints.
+            Batch K-Means clustering over honeypot telemetry. This process runs automatically via scheduled background tasks.
           </p>
         </div>
-        <button onClick={runProfiling} disabled={busy} className="btn-primary shrink-0">
+        <button onClick={runProfiling} disabled={busy} className="btn-primary shrink-0" title="Force an off-schedule manual run">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
-          {busy ? "Running Job…" : "Run Attacker Profiling"}
+          {busy ? "Running Job…" : "Force Manual Run"}
         </button>
+      </div>
+
+      <div className="flex items-start gap-2 rounded-lg border border-vault-700 bg-vault-850 px-3 py-2 text-xs text-slate-500">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-indigo" />
+        <span>
+          <strong>Automated Production Architecture:</strong> In a live environment, the backend executes this K-Means clustering model automatically (e.g., nightly CRON job). The "Force Manual Run" button is provided for on-demand forensic analysis.
+        </span>
       </div>
 
       {error && (
@@ -120,7 +127,7 @@ export const AttackerProfiles: React.FC = () => {
               {loading && profiles.length === 0 ? (
                 <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
               ) : profiles.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No attacker profiles mapped yet. Trigger a run above.</td></tr>
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No attacker profiles mapped yet. Waiting for honeypot telemetry.</td></tr>
               ) : (
                 profiles.map((p) => (
                   <tr key={p.browser_fingerprint} className="border-t border-vault-700/60 hover:bg-vault-800/30">
