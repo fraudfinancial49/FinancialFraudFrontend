@@ -23,7 +23,8 @@ export const ThreatIntelligence: React.FC = () => {
   const fetchSessions = async () => {
     setLoading(true);
     try {
-      const { data } = await apiClient.get<DBHoneypotSession[]>("/api/v1/honeypot/sessions");
+      // Fixed: Removed /api/v1 prefix to match the backend honeypot router
+      const { data } = await apiClient.get<DBHoneypotSession[]>("/honeypot/sessions");
       setDbSessions(data);
     } catch (err) {
       console.error("Failed to load honeypot sessions.");
@@ -43,7 +44,8 @@ export const ThreatIntelligence: React.FC = () => {
     setClosingId(sessionId);
     try {
       const payload: HoneypotCloseRequest = { session_id: sessionId };
-      await apiClient.post<GenericStatus>("/api/v1/honeypot/close", payload);
+      // Fixed: Removed /api/v1 prefix to match the backend honeypot router
+      await apiClient.post<GenericStatus>("/honeypot/close", payload);
       pushToast("success", `Honeypot connection ${sessionId.slice(0,8)} forcefully terminated.`);
       await fetchSessions();
     } catch (err: any) {
