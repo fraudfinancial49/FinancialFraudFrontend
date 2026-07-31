@@ -49,7 +49,7 @@ export const AttackerProfiles: React.FC = () => {
         "/api/v1/admin/run-attacker-profiling"
       );
       pushToast("success", data.message || "Attacker profiling job completed.");
-      await fetchProfiles();
+      await fetchProfiles(); // Refresh the table with new clusters
     } catch (err: any) {
       setError(err?.response?.data?.detail || "Failed to trigger the attacker profiling job.");
     } finally {
