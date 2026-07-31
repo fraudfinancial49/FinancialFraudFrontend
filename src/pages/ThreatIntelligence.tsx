@@ -186,7 +186,7 @@ export const ThreatIntelligence: React.FC = () => {
                             {closingId === s.session_id ? <Loader2 className="h-3 w-3 animate-spin" /> : <StopCircle className="h-3 w-3" />}
                             Kill
                           </button>
-                        </
+                        </>
                       )}
                     </td>
                   </tr>
