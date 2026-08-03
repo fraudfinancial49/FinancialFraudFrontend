@@ -1,4 +1,3 @@
-# PaySim Fraud Intelligence — Admin Console (Phase 5 Frontend)
 
 React + TypeScript + Vite + Tailwind CSS admin dashboard for fraud analysts and security
 administrators, wired to the Phase 4 FastAPI backend.

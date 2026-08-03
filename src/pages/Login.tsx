@@ -33,7 +33,7 @@ export const Login: React.FC = () => {
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-2 text-center">
           <ShieldEllipsis className="h-10 w-10 text-accent-teal" />
-          <h1 className="text-xl font-bold text-slate-50">PaySim Fraud Intelligence</h1>
+          <h1 className="text-xl font-bold text-slate-50">FinFraudShield</h1>
           <p className="text-sm text-slate-500">
             Admin console for fraud analysts &amp; security officers
           </p>

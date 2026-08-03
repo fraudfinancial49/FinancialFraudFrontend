@@ -32,7 +32,7 @@ export const Layout: React.FC = () => {
         <div className="flex items-center gap-2 px-5 py-5">
           <ShieldEllipsis className="h-7 w-7 text-accent-teal" />
           <div>
-            <p className="text-sm font-bold leading-tight text-slate-50">PaySim Fraud Intel</p>
+            <p className="text-sm font-bold leading-tight text-slate-50">FinFraudShield Intel</p>
             <p className="text-[11px] leading-tight text-slate-500">Admin Console · Phase 5</p>
           </div>
         </div>
