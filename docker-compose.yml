@@ -1,11 +1,5 @@
 version: "3.9"
 
-# The Phase 4 FastAPI backend is deployed on Render at:
-#   https://financialfraudbackend.onrender.com
-# The frontend talks to it directly (see nginx.conf / vite.config.ts /
-# src/api/client.ts), so no local backend container is required. The
-# service below is kept, commented out, for anyone who prefers to run the
-# backend locally instead of hitting the deployed Render instance.
 services:
   # backend:
   #   build:

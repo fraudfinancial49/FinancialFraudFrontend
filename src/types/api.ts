@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// Mirrors backend/app/schemas/schemas.py exactly (Phase 4 FastAPI service).
-// Keep in lock-step with the backend — these are not independently invented.
-// ---------------------------------------------------------------------------
  
 export type UserRole = "user" | "admin";
  
@@ -126,12 +122,7 @@ export interface AttackerProfilingResult {
   n_clusters?: number;
 }
  
-// -- Explainability (per-transaction SHAP) -------------------------------
-// Requires a live backend route: GET /api/v1/transactions/{id}/explain
-// returning the frozen SHAP explainer's base value plus a feature -> impact
-// dictionary for that specific transaction. This is NOT part of the Phase 4
-// service as originally documented elsewhere in this notebook — confirm the
-// route is deployed before relying on this panel in a live demo.
+
 export interface ShapFeatureContribution {
   feature: string;
   impact: number;
@@ -144,27 +135,14 @@ export interface ShapExplanationResponse {
   predicted_score?: number;
 }
  
-// -- Admin retrain trigger -------------------------------------------------
-// Requires a live backend route: POST /api/v1/admin/retrain. Also not part
-// of the Phase 4 service as originally documented — confirm deployment.
+
 export interface RetrainTriggerResponse {
   status: string;
   message?: string;
   job_id?: string;
 }
  
-// ---------------------------------------------------------------------------
-// System-wide analytics & history (NEW — requires new backend GET endpoints)
-// ---------------------------------------------------------------------------
-// These types back the Overview dashboard's date-wise analytics. They assume
-// three backend routes that do not exist yet in the Phase 4 service:
-//   GET /api/v1/analytics/summary?start_date=&end_date=
-//   GET /api/v1/analytics/timeseries?start_date=&end_date=&interval=day
-//   GET /api/v1/transactions?start_date=&end_date=&routing_decision=&page=&page_size=
-// See the accompanying change document's "Backend requirements" section for
-// the exact response shapes these types were written against. Do not treat
-// this section as confirmation the routes exist — it is the contract the
-// frontend needs the backend to satisfy.
+
  
 export type TransactionSource = "system_auto" | "manual_sandbox";
  

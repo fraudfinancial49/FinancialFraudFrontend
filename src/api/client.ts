@@ -23,9 +23,6 @@ export function clearStoredSession(): void {
   localStorage.removeItem(USER_STORAGE_KEY);
 }
  
-// Deployed Phase 4 FastAPI backend (Render). Override at build time with a
-// VITE_API_BASE_URL env var (see frontend/.env) if you deploy the backend
-// somewhere else — no code change needed, just a different env value.
 export const API_BASE_URL: string =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
   "https://financialfraudbackend.onrender.com";

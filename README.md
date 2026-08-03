@@ -1,7 +1,4 @@
 
-React + TypeScript + Vite + Tailwind CSS admin dashboard for fraud analysts and security
-administrators, wired to the Phase 4 FastAPI backend.
-
 **Deployed backend:** `https://financialfraudbackend.onrender.com`
 (configured via `VITE_API_BASE_URL` in `frontend/.env`, consumed in `src/api/client.ts`).
 
@@ -56,14 +53,4 @@ receiving `VITE_API_BASE_URL` as a build ARG) and `nginx.conf`, which reverse-pr
 the API route families straight to the deployed Render backend at `https://financialfraudbackend.onrender.com`
 — no local backend container or CORS configuration needed.
 
-## Notes on API coverage
 
-Phase 4 currently exposes **action** endpoints (`/auth/login`, `/api/v1/transactions/assess`,
-`/vault/otp`, `/vault/review`, `/vault/move-to-vault`, `/honeypot/*`,
-`/admin/run-attacker-profiling`, `/admin/feedback`) plus `/health`, `/ready`, and
-`/model-info`, but no GET list endpoints for historical transactions, vault cases,
-honeypot sessions, or attacker profiles. This dashboard therefore builds its live feeds
-from the real responses returned by the actions an analyst performs during the session
-(see `src/store/ActivityContext.tsx`). Adding list endpoints on the backend is the
-natural next step to make Overview/Safe Vault/Threat Intelligence/Attacker Profiles
-persist and reflect full historical state across page reloads and multiple analysts.
