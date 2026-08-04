@@ -1,7 +1,12 @@
 import logo from "@/assets/FinFraudShieldImg.png";
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { AlertCircle, Loader2 } from "lucide-react";
+import {
+  AlertCircle,
+  Loader2,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 
 export const Login: React.FC = () => {
@@ -10,6 +15,7 @@ export const Login: React.FC = () => {
   const location = useLocation() as { state?: { from?: { pathname?: string } } };
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -73,20 +79,36 @@ export const Login: React.FC = () => {
           </div>
 
           <div>
-            <label className="field-label" htmlFor="password">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              className="input-field"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
+  <label className="field-label" htmlFor="password">
+    Password
+  </label>
+
+  <div className="relative">
+    <input
+      id="password"
+      type={showPassword ? "text" : "password"}
+      required
+      autoComplete="current-password"
+      className="input-field pr-12"
+      placeholder="••••••••"
+      value={password}
+      onChange={(e) => setPassword(e.target.value)}
+    />
+
+    <button
+      type="button"
+      onClick={() => setShowPassword(!showPassword)}
+      className="absolute inset-y-0 right-3 flex items-center text-slate-400 transition hover:text-slate-200"
+      aria-label={showPassword ? "Hide password" : "Show password"}
+    >
+      {showPassword ? (
+        <EyeOff className="h-5 w-5" />
+      ) : (
+        <Eye className="h-5 w-5" />
+      )}
+    </button>
+  </div>
+</div>
 
           <button type="submit" disabled={busy} className="btn-primary w-full justify-center">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
