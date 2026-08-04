@@ -1,3 +1,4 @@
+import logo from "@/assets/FinFraudShieldImg.png";
 import React from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
@@ -8,7 +9,6 @@ import {
   BrainCircuit,
   ListChecks,
   LogOut,
-  ShieldEllipsis,
   FlaskConical,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
@@ -29,13 +29,22 @@ export const Layout: React.FC = () => {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-vault-950">
       <aside className="flex w-64 shrink-0 flex-col border-r border-vault-700/60 bg-vault-900/60 backdrop-blur-sm">
-        <div className="flex items-center gap-2 px-5 py-5">
-          <ShieldEllipsis className="h-7 w-7 text-accent-teal" />
-          <div>
-            <p className="text-sm font-bold leading-tight text-slate-50">FinFraudShield Intel</p>
-            <p className="text-[11px] leading-tight text-slate-500">Admin Console</p>
-          </div>
-        </div>
+<div className="flex items-center gap-3 px-5 py-6">
+  <img
+    src={logo}
+    alt="FinFraudShield Logo"
+    className="h-12 w-12 object-contain rounded-lg"
+  />
+
+  <div>
+    <p className="text-base font-bold leading-tight text-slate-50">
+      FinFraudShield
+    </p>
+    <p className="text-xs leading-tight text-slate-500">
+      AI Fraud Prevention Platform
+    </p>
+  </div>
+</div>
  
         <nav className="flex-1 space-y-1 px-3 py-2">
           {NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin).map((item) => {

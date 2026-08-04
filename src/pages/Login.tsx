@@ -1,6 +1,7 @@
+import logo from "@/assets/FinFraudShieldImg.png";
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ShieldEllipsis, AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 
 export const Login: React.FC = () => {
@@ -31,13 +32,21 @@ export const Login: React.FC = () => {
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-vault-950 px-4">
       <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center gap-2 text-center">
-          <ShieldEllipsis className="h-10 w-10 text-accent-teal" />
-          <h1 className="text-xl font-bold text-slate-50">FinFraudShield</h1>
-          <p className="text-sm text-slate-500">
-            Admin console for fraud analysts &amp; security officers
-          </p>
-        </div>
+      <div className="mb-8 flex flex-col items-center gap-3 text-center">
+        <img
+          src={logo}
+          alt="FinFraudShield Logo"
+          className="h-24 w-24 object-contain"
+        />
+
+        <h1 className="text-2xl font-bold text-slate-50">
+          FinFraudShield
+        </h1>
+
+        <p className="text-sm text-slate-500 max-w-xs">
+          AI-Powered Fraud Detection & Transaction Security Platform
+        </p>
+      </div>
 
         <form onSubmit={handleSubmit} className="panel space-y-4 p-6">
           {error && (
