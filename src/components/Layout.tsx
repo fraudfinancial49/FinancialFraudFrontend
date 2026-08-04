@@ -31,29 +31,16 @@ export const Layout: React.FC = () => {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-vault-950">
       <aside className={`flex shrink-0 flex-col border-r border-vault-700/60 bg-vault-900/60 backdrop-blur-sm transition-all duration-300 ${collapsed ? "w-20" : "w-64"}`}>
-        <div
-  className={`flex items-center border-b border-vault-700/60 px-4 py-5 ${
-    collapsed ? "justify-center" : "justify-between"
-  }`}
->
-{!collapsed && (
-  <div className="flex items-center gap-3 overflow-hidden">
-    <img
-      src={logo}
-      alt="FinFraudShield Logo"
-      className="h-10 w-10 rounded-lg object-contain"
-    />
-
-    <div>
-      <p className="text-base font-bold text-slate-50">
-        FinFraudShield
-      </p>
-      <p className="text-xs text-slate-500">
-        AI Fraud Prevention Platform
-      </p>
-    </div>
-  </div>
-)}
+        <div className="flex items-center justify-between border-b border-vault-700/60 px-4 py-5">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <img src={logo} alt="FinFraudShield Logo" className="h-10 w-10 rounded-lg object-contain" />
+            {!collapsed && (
+              <div>
+                <p className="text-base font-bold text-slate-50">FinFraudShield</p>
+                <p className="text-xs text-slate-500">AI Fraud Prevention Platform</p>
+              </div>
+            )}
+          </div>
           <button onClick={() => setCollapsed(!collapsed)} className="rounded-lg p-2 transition hover:bg-vault-800" title={collapsed ? "Expand Sidebar" : "Collapse Sidebar"}>
             <Menu className="h-5 w-5 text-slate-300" />
           </button>
