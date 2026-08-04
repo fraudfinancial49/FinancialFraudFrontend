@@ -39,7 +39,7 @@ const METRIC_KEYS: { key: string; label: string }[] = [
 
 type RoutingFilter = "all" | "approve" | "vault" | "honeypot";
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 50;
 
 export const ModelPerformance: React.FC = () => {
   const [info, setInfo] = useState<ModelInfoResponse | null>(null);
