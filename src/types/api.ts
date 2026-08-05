@@ -221,3 +221,30 @@ export interface ProfilingRunRecord {
   result: AttackerProfilingResult;
 }
  
+export interface AccountTransactionOut {
+  transaction_id: string;
+  name_orig: string;
+  name_dest: string;
+  type: TransactionType;
+  amount: number;
+  routing_decision: RoutingDecision | "auto_reject" | null;
+  final_risk_score: number | null;
+  timestamp: string;
+}
+
+export interface AccountTransactionsResponse {
+  account_id: string;
+  total: number;
+  page: number;
+  page_size: number;
+  is_blocked: boolean;
+  transactions: AccountTransactionOut[];
+}
+
+export interface AccountBlockStatusOut {
+  account_id: string;
+  is_blocked: boolean;
+  reason?: string | null;
+  blocked_by?: string | null;
+  blocked_at?: string | null;
+}
