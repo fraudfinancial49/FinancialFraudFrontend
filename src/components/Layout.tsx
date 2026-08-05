@@ -11,6 +11,7 @@ import {
   LogOut,
   FlaskConical,
   Menu,
+  UserSearch,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
   { to: "/safe-vault", label: "Safe Vault", icon: ShieldCheck, adminOnly: false },
   { to: "/threat-intelligence", label: "Threat Intelligence", icon: Bug, adminOnly: false },
   { to: "/attacker-profiles", label: "Attacker Profiles", icon: Users, adminOnly: true },
+  { to: "/account-lookup", label: "Account Lookup", icon: UserSearch, adminOnly: true },
   { to: "/model-performance", label: "Model & XAI", icon: BrainCircuit, adminOnly: false },
   { to: "/feedback-queue", label: "Feedback Queue", icon: ListChecks, adminOnly: true },
 ];
