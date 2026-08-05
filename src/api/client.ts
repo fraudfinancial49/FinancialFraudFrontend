@@ -122,6 +122,33 @@ export async function fetchTransactions(
   );
   return response.data;
 }
- 
+
+// --- Part 2: admin account lookup / block ---
+export async function getAccountTransactions(accountId: string, page = 1, pageSize = 25) {
+  const { data } = await apiClient.get(`/api/v1/admin/accounts/${accountId}/transactions`, {
+    params: { page, page_size: pageSize },
+  });
+  return data;
+}
+
+export async function getAccountStatus(accountId: string) {
+  const { data } = await apiClient.get(`/api/v1/admin/accounts/${accountId}/status`);
+  return data;
+}
+
+export async function blockAccount(accountId: string, reason?: string) {
+  const { data } = await apiClient.post(`/api/v1/admin/accounts/${accountId}/block`, { reason });
+  return data;
+}
+
+export async function unblockAccount(accountId: string) {
+  const { data } = await apiClient.post(`/api/v1/admin/accounts/${accountId}/unblock`);
+  return data;
+}
+
+export async function explainTransaction(transactionId: string) {
+  const { data } = await apiClient.post(`/api/v1/transactions/${transactionId}/explain`);
+  return data;
+}
 export default apiClient;
  
