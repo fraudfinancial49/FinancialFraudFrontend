@@ -1,4 +1,3 @@
-%%writefile frontend/src/pages/AccountLookup.tsx
 import React, { useState } from "react";
 import { Search, ShieldOff, ShieldCheck as ShieldCheckIcon, Loader2 } from "lucide-react";
 import {

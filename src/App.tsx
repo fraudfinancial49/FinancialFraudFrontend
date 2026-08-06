@@ -10,6 +10,7 @@ import Overview from "@/pages/Overview";
 import Sandbox from "@/pages/Sandbox";
 import SafeVault from "@/pages/SafeVault";
 import ThreatIntelligence from "@/pages/ThreatIntelligence";
+import AccountLookup from "@/pages/AccountLookup";
 import AttackerProfiles from "@/pages/AttackerProfiles";
 import ModelPerformance from "@/pages/ModelPerformance";
 import AdminFeedbackQueue from "@/pages/AdminFeedbackQueue";
@@ -42,6 +43,14 @@ const App: React.FC = () => {
                     </ProtectedRoute>
                   }
                 />
+                <Route
+  path="/account-lookup"
+  element={
+    <ProtectedRoute requireAdmin>
+      <AccountLookup />
+    </ProtectedRoute>
+  }
+/>
                 <Route path="/model-performance" element={<ModelPerformance />} />
                 <Route
                   path="/feedback-queue"
