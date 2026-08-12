@@ -9,6 +9,8 @@ const CLUSTER_LABELS = ["Automated Bot", "Slow Prober", "Credential Stuffer", "O
 interface DBAttackerProfile {
   browser_fingerprint: string;
   simulated_ip: string | null;
+  actual_ip: string | null;
+  location: string | null;
   total_sessions: number;
   avg_session_duration_seconds: number;
   avg_events_per_session: number;
@@ -111,13 +113,14 @@ export const AttackerProfiles: React.FC = () => {
             Refresh DB
           </button>
         </div>
-        <div className="max-h-96 overflow-y-auto">
+        <div className="max-h-[600px] overflow-y-auto">
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 bg-vault-900 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-2">Fingerprint</th>
                 <th className="px-4 py-2">Classification</th>
                 <th className="px-4 py-2">Threat Score</th>
+                <th className="px-4 py-2">Origin</th>
                 <th className="px-4 py-2">Sessions</th>
                 <th className="px-4 py-2">Events/Session</th>
                 <th className="px-4 py-2">Last Seen</th>
@@ -125,9 +128,9 @@ export const AttackerProfiles: React.FC = () => {
             </thead>
             <tbody>
               {loading && profiles.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
               ) : profiles.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No attacker profiles mapped yet. Waiting for honeypot telemetry.</td></tr>
+                <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">No attacker profiles mapped yet. Waiting for honeypot telemetry.</td></tr>
               ) : (
                 profiles.map((p) => (
                   <tr key={p.browser_fingerprint} className="border-t border-vault-700/60 hover:bg-vault-800/30">
@@ -136,6 +139,16 @@ export const AttackerProfiles: React.FC = () => {
                       <span className="badge bg-vault-800 text-slate-400">{p.cluster_label}</span>
                     </td>
                     <td className="px-4 py-2 text-risk-high font-bold">{p.threat_score.toFixed(1)}</td>
+                    <td className="px-4 py-2">
+                      {p.actual_ip ? (
+                        <div>
+                          <div className="text-slate-300 font-mono text-xs">{p.actual_ip}</div>
+                          <div className="text-xs text-slate-500">{p.location || "Unknown"}</div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-slate-400">{p.total_sessions}</td>
                     <td className="px-4 py-2 text-slate-400">{p.avg_events_per_session.toFixed(1)}</td>
                     <td className="px-4 py-2 text-slate-500">{new Date(p.last_seen_at).toLocaleDateString()}</td>

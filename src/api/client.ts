@@ -150,5 +150,11 @@ export async function explainTransaction(transactionId: string) {
   const { data } = await apiClient.post(`/api/v1/transactions/${transactionId}/explain`);
   return data;
 }
+
+// --- Part 5: Honeypot Event Telemetry ---
+export async function getHoneypotEvents(sessionId: string) {
+  const { data } = await apiClient.get(`/api/v1/honeypot/${sessionId}/events`);
+  return data;
+}
+
 export default apiClient;
- 

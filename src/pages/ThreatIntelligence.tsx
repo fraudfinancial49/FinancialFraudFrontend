@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { Bug, StopCircle, Loader2, RefreshCw, Activity, ArrowRightCircle } from "lucide-react";
-import apiClient from "@/api/client";
+import apiClient, { getHoneypotEvents } from "@/api/client";
 import type { GenericStatus, HoneypotAdvanceRequest, HoneypotCloseRequest } from "@/types/api";
 import { useToast } from "@/components/Toast";
 
 interface DBHoneypotSession {
   session_id: string;
   simulated_ip: string;
+  actual_ip: string | null;
+  location: string | null;
   browser_fingerprint: string;
   stage: string;
   started_at: string;
@@ -25,10 +27,14 @@ export const ThreatIntelligence: React.FC = () => {
   const [advanceBusy, setAdvanceBusy] = useState(false);
   const [closingId, setClosingId] = useState<string | null>(null);
 
+  // Timeline State
+  const [selectedEvents, setSelectedEvents] = useState<any[]>([]);
+  const [viewingTimelineId, setViewingTimelineId] = useState<string | null>(null);
+
   const fetchSessions = async () => {
     setLoading(true);
     try {
-      const { data } = await apiClient.get<DBHoneypotSession[]>("/honeypot/sessions");
+      const { data } = await apiClient.get<DBHoneypotSession[]>("/api/v1/honeypot/sessions");
       setDbSessions(data);
     } catch (err) {
       console.error("Failed to load honeypot sessions.");
@@ -47,9 +53,12 @@ export const ThreatIntelligence: React.FC = () => {
     setAdvanceBusy(true);
     try {
       const payload: HoneypotAdvanceRequest = { session_id: simulatorSessionId, event_type: eventType };
-      await apiClient.post<GenericStatus>("/honeypot/advance", payload);
+      await apiClient.post<GenericStatus>("/api/v1/honeypot/advance", payload);
       pushToast("success", `Event '${eventType}' recorded for session ${simulatorSessionId.slice(0,6)}...`);
       await fetchSessions(); 
+      if (viewingTimelineId === simulatorSessionId) {
+        handleViewTimeline(simulatorSessionId, true); // Refresh timeline silently
+      }
     } catch (err: any) {
       pushToast("error", err?.response?.data?.detail || "Failed to record event.");
     } finally {
@@ -61,7 +70,7 @@ export const ThreatIntelligence: React.FC = () => {
     setClosingId(sessionId);
     try {
       const payload: HoneypotCloseRequest = { session_id: sessionId };
-      await apiClient.post<GenericStatus>("/honeypot/close", payload);
+      await apiClient.post<GenericStatus>("/api/v1/honeypot/close", payload);
       pushToast("success", `Honeypot session finalized.`);
       if (simulatorSessionId === sessionId) setSimulatorSessionId("");
       await fetchSessions();
@@ -69,6 +78,21 @@ export const ThreatIntelligence: React.FC = () => {
       pushToast("error", err?.response?.data?.detail || "Failed to terminate session.");
     } finally {
       setClosingId(null);
+    }
+  };
+
+  const handleViewTimeline = async (sessionId: string, silentRefresh = false) => {
+    if (viewingTimelineId === sessionId && !silentRefresh) {
+      setViewingTimelineId(null);
+      setSelectedEvents([]);
+      return;
+    }
+    try {
+      const data = await getHoneypotEvents(sessionId);
+      setSelectedEvents(data);
+      setViewingTimelineId(sessionId);
+    } catch (err) {
+      if (!silentRefresh) pushToast("error", "Failed to load event timeline.");
     }
   };
 
@@ -130,7 +154,7 @@ export const ThreatIntelligence: React.FC = () => {
             {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Sync Database
           </button>
         </div>
-        <div className="max-h-[500px] overflow-y-auto">
+        <div className="max-h-[700px] overflow-y-auto">
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 bg-vault-900 text-xs uppercase tracking-wide text-slate-500">
               <tr>
@@ -152,44 +176,90 @@ export const ThreatIntelligence: React.FC = () => {
               {dbSessions.map((s) => {
                 const isActive = s.stage !== "closed";
                 return (
-                  <tr key={s.session_id} className={`border-t border-vault-700/60 ${isActive ? 'bg-risk-high/5' : ''}`}>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-300">
-                      {isActive ? (
-                        <button onClick={() => { setSimulatorSessionId(s.session_id); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-accent-indigo hover:underline" title="Load into Simulator">
-                          {s.session_id.slice(0, 12)}…
+                  <React.Fragment key={s.session_id}>
+                    <tr className={`border-t border-vault-700/60 ${isActive ? 'bg-risk-high/5' : ''}`}>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-300">
+                        {isActive ? (
+                          <button onClick={() => { setSimulatorSessionId(s.session_id); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-accent-indigo hover:underline" title="Load into Simulator">
+                            {s.session_id.slice(0, 12)}…
+                          </button>
+                        ) : (
+                          s.session_id.slice(0, 12) + "…"
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{s.browser_fingerprint || "—"}</td>
+                      <td className="px-4 py-3">
+                        <span className={`badge ${isActive ? 'bg-risk-high/20 text-risk-high' : 'bg-vault-800 text-slate-500'}`}>
+                          {isActive ? 'LIVE' : 'Closed'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300 font-mono">{s.events_count}</td>
+                      <td className="px-4 py-3 text-right flex justify-end gap-2">
+                        <button 
+                          onClick={() => handleViewTimeline(s.session_id)}
+                          className="inline-flex items-center gap-1 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-xs font-medium text-slate-300 transition hover:bg-slate-700"
+                        >
+                          {viewingTimelineId === s.session_id ? "Hide" : "Timeline"}
                         </button>
-                      ) : (
-                        s.session_id.slice(0, 12) + "…"
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-300">{s.browser_fingerprint || "—"}</td>
-                    <td className="px-4 py-3">
-                      <span className={`badge ${isActive ? 'bg-risk-high/20 text-risk-high' : 'bg-vault-800 text-slate-500'}`}>
-                        {isActive ? 'LIVE' : 'Closed'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-300 font-mono">{s.events_count}</td>
-                    <td className="px-4 py-3 text-right flex justify-end gap-2">
-                      {isActive && (
-                        <>
-                          <button 
-                            onClick={() => { setSimulatorSessionId(s.session_id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                            className="inline-flex items-center gap-1 rounded border border-accent-indigo/50 bg-accent-indigo/10 px-2 py-1 text-xs font-medium text-accent-indigo transition hover:bg-accent-indigo/20"
-                          >
-                            Select
-                          </button>
-                          <button 
-                            onClick={() => handleForceClose(s.session_id)}
-                            disabled={closingId === s.session_id}
-                            className="inline-flex items-center gap-1 rounded border border-risk-high/50 bg-risk-high/10 px-2 py-1 text-xs font-medium text-risk-high transition hover:bg-risk-high/20"
-                          >
-                            {closingId === s.session_id ? <Loader2 className="h-3 w-3 animate-spin" /> : <StopCircle className="h-3 w-3" />}
-                            Kill
-                          </button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
+                        {isActive && (
+                          <>
+                            <button 
+                              onClick={() => { setSimulatorSessionId(s.session_id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                              className="inline-flex items-center gap-1 rounded border border-accent-indigo/50 bg-accent-indigo/10 px-2 py-1 text-xs font-medium text-accent-indigo transition hover:bg-accent-indigo/20"
+                            >
+                              Select
+                            </button>
+                            <button 
+                              onClick={() => handleForceClose(s.session_id)}
+                              disabled={closingId === s.session_id}
+                              className="inline-flex items-center gap-1 rounded border border-risk-high/50 bg-risk-high/10 px-2 py-1 text-xs font-medium text-risk-high transition hover:bg-risk-high/20"
+                            >
+                              {closingId === s.session_id ? <Loader2 className="h-3 w-3 animate-spin" /> : <StopCircle className="h-3 w-3" />}
+                              Kill
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                    
+                    {/* Expandable Timeline View */}
+                    {viewingTimelineId === s.session_id && (
+                      <tr>
+                        <td colSpan={5} className="bg-vault-950 p-4 border-b border-vault-700/60">
+                          <div className="mb-4 grid grid-cols-2 gap-4 rounded bg-vault-900 p-3 border border-vault-700">
+                             <div>
+                                <span className="text-xs text-slate-500 block">Actual Network IP</span>
+                                <span className="text-sm text-risk-high font-mono">{s.actual_ip || "Capturing..."}</span>
+                             </div>
+                             <div>
+                                <span className="text-xs text-slate-500 block">Geo-Location</span>
+                                <span className="text-sm text-slate-200">{s.location || "Unknown"}</span>
+                             </div>
+                          </div>
+
+                          <h4 className="text-sm font-semibold text-accent-indigo mb-3">Activity Timeline</h4>
+                          {selectedEvents.length === 0 ? (
+                            <p className="text-xs text-slate-500">No detailed events logged yet.</p>
+                          ) : (
+                            <ul className="space-y-3 border-l-2 border-vault-700 ml-2 pl-4 max-h-64 overflow-y-auto">
+                              {selectedEvents.map((ev) => (
+                                <li key={ev.event_id} className="relative">
+                                  <div className={`absolute -left-[21px] top-1.5 h-2 w-2 rounded-full ${ev.stage === 'micro_interaction' ? 'bg-slate-600' : 'bg-accent-indigo'}`}></div>
+                                  <p className={`text-xs font-mono ${ev.stage === 'micro_interaction' ? 'text-slate-500' : 'text-slate-400'}`}>
+                                    {new Date(ev.occurred_at).toLocaleTimeString()} — 
+                                    <span className="font-semibold ml-1">{ev.stage === 'micro_interaction' ? 'Click Event' : ev.stage}</span>
+                                  </p>
+                                  <p className={`text-xs mt-0.5 ${ev.stage === 'micro_interaction' ? 'text-slate-400' : 'text-slate-200 text-sm'}`}>
+                                    {ev.detail}
+                                  </p>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
