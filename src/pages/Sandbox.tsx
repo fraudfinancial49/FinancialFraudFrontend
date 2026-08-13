@@ -13,7 +13,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import apiClient from "@/api/client";
+import apiClient, { explainTransaction } from "@/api/client";
 import { useActivity } from "@/store/ActivityContext";
 import { RiskScoreBadge, RoutingBadge } from "@/components/RiskBadges";
 import type {
@@ -21,7 +21,7 @@ import type {
   TransactionAssessResponse,
   TransactionType,
 } from "@/types/api";
- 
+
 // ---------------------------------------------------------------------------
 // Manual testing / demo tool. Nothing submitted here reflects real bank
 // traffic — it exists so an analyst or developer can hand-build a single
@@ -29,9 +29,9 @@ import type {
 // shown on this page are session-local only (see ActivityContext) and are
 // intentionally separate from the bank-wide Overview dashboard.
 // ---------------------------------------------------------------------------
- 
+
 const TX_TYPES: TransactionType[] = ["CASH_IN", "CASH_OUT", "DEBIT", "PAYMENT", "TRANSFER"];
- 
+
 const DEFAULT_FORM: TransactionAssessRequest = {
   nameOrig: "C1231006815",
   nameDest: "M1979787155",
@@ -46,20 +46,25 @@ const DEFAULT_FORM: TransactionAssessRequest = {
   user_agent: "Mozilla/5.0",
   browser_fingerprint: "",
 };
- 
+
 const ROUTING_COLORS: Record<string, string> = {
   approve: "#2fd97f",
   vault: "#f5b942",
   honeypot: "#f2545b",
+  auto_reject: "#f2545b",
 };
- 
+
 export const Sandbox: React.FC = () => {
   const { transactions, recordAssessment } = useActivity();
   const [form, setForm] = useState<TransactionAssessRequest>(DEFAULT_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [assessError, setAssessError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<TransactionAssessResponse | null>(null);
- 
+  
+  // --- XAI State for Professor Demo ---
+  const [shapData, setShapData] = useState<any[] | null>(null);
+  const [shapLoading, setShapLoading] = useState(false);
+
   const kpis = useMemo(() => {
     const total = transactions.length;
     const totalVolume = transactions.reduce((sum, t) => sum + t.request.amount, 0);
@@ -69,15 +74,15 @@ export const Sandbox: React.FC = () => {
       total > 0 ? transactions.reduce((sum, t) => sum + t.final_risk_score, 0) / total : 0;
     return { total, totalVolume, avgLatency, avgRisk };
   }, [transactions]);
- 
+
   const routingBreakdown = useMemo(() => {
-    const counts: Record<string, number> = { approve: 0, vault: 0, honeypot: 0 };
+    const counts: Record<string, number> = { approve: 0, vault: 0, honeypot: 0, auto_reject: 0 };
     transactions.forEach((t) => {
       counts[t.routing_decision] = (counts[t.routing_decision] ?? 0) + 1;
     });
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [transactions]);
- 
+
   const riskTimeline = useMemo(
     () =>
       transactions
@@ -89,59 +94,84 @@ export const Sandbox: React.FC = () => {
         })),
     [transactions]
   );
- 
+
   const handleChange = (
     field: keyof TransactionAssessRequest
   ) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const raw = e.target.value;
-    const isNumeric = ["amount", "oldbalanceOrg", "newbalanceOrig", "oldbalanceDest", "newbalanceDest", "step"].includes(
-      field
-    );
-    setForm((prev) => ({
-      ...prev,
-      [field]: isNumeric ? Number(raw) : raw,
-    }));
+    const isNumeric = ["amount", "oldbalanceOrg", "newbalanceOrig", "oldbalanceDest", "newbalanceDest", "step"].includes(field);
+    setForm((prev) => ({ ...prev, [field]: isNumeric ? Number(raw) : raw }));
   };
- 
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setAssessError(null);
+    setShapData(null);
+    
     try {
       const payload: TransactionAssessRequest = {
         ...form,
         browser_fingerprint: form.browser_fingerprint || undefined,
       };
-      const response = await apiClient.post<TransactionAssessResponse>(
-        "/api/v1/transactions/assess",
-        payload
-      );
+      
+      const response = await apiClient.post<TransactionAssessResponse>("/api/v1/transactions/assess", payload);
       setLastResult(response.data);
       recordAssessment(payload, response.data);
+
+      // Automatically fetch SHAP explanation for the UI
+      setShapLoading(true);
+      try {
+        const shapRes = await explainTransaction(response.data.transaction_id);
+        const targetPayload = shapRes?.explanation || shapRes;
+        const rawFeatures = targetPayload?.contributions || targetPayload?.features || {};
+        const rows = Object.entries(rawFeatures)
+          .map(([feature, impact]) => ({ feature, impact: Number(impact) }))
+          .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+          .slice(0, 8); // Show top 8 features
+        setShapData(rows);
+      } catch (err) {
+        console.error("SHAP explanation failed", err);
+      } finally {
+        setShapLoading(false);
+      }
+
     } catch (err: any) {
-      const detail =
-        err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        "Assessment request failed. Confirm the backend is running and the model registry is loaded.";
-      setAssessError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setAssessError(err?.response?.data?.detail || "Assessment failed.");
     } finally {
       setSubmitting(false);
     }
   };
- 
+
+  // --- Process data for Recharts ---
+  const individualScoresData = useMemo(() => {
+    if (!lastResult?.individual_scores) return [];
+    return Object.entries(lastResult.individual_scores).map(([name, score]) => ({
+      name: name.replace("_", " "),
+      score: score * 100, // Convert probability to 0-100 scale
+    }));
+  }, [lastResult]);
+
+  const fusionWeightsData = useMemo(() => {
+    if (!lastResult?.fusion_weights) return [];
+    return Object.entries(lastResult.fusion_weights).map(([name, weight]) => ({
+      name: name.replace("_", " "),
+      weight: weight * 100, // Convert to percentage
+    }));
+  }, [lastResult]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <FlaskConical className="h-5 w-5 text-accent-teal" />
         <div>
-          <h1 className="text-xl font-bold text-slate-50">Sandbox — Manual Transaction Test</h1>
+          <h1 className="text-xl font-bold text-slate-50">Sandbox & XAI Evaluation</h1>
           <p className="text-sm text-slate-500">
-            Hand-build a transaction and see how the pipeline scores it. Session-local only —
-            this does not represent real bank traffic. See the Overview page for live monitoring.
+            Submit a transaction to instantly view its hybrid routing decision, ensemble weights, individual model predictions, and SHAP feature influence.
           </p>
         </div>
       </div>
- 
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="kpi-card">
           <span className="text-xs uppercase tracking-wide text-slate-500">Session Assessments</span>
@@ -168,17 +198,15 @@ export const Sandbox: React.FC = () => {
           <span className="text-2xl font-bold text-slate-50">{kpis.avgLatency.toFixed(0)} ms</span>
         </div>
       </div>
- 
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+        {/* Transaction Entry Form */}
         <div className="panel lg:col-span-2">
-          <div className="panel-header">
-            <h2 className="text-sm font-semibold text-slate-200">Assess a Transaction</h2>
-          </div>
+          <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">Transaction Input</h2></div>
           <form onSubmit={handleSubmit} className="space-y-3 p-5">
             {assessError && (
               <div className="flex items-start gap-2 rounded-lg border border-risk-high/40 bg-risk-high/10 px-3 py-2 text-xs text-risk-high">
-                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>{assessError}</span>
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{assessError}</span>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
@@ -195,192 +223,130 @@ export const Sandbox: React.FC = () => {
               <div>
                 <label className="field-label">Type</label>
                 <select className="input-field" value={form.type} onChange={handleChange("type")}>
-                  {TX_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
+                  {TX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div>
                 <label className="field-label">Step</label>
-                <input
-                  type="number"
-                  className="input-field"
-                  value={form.step}
-                  onChange={handleChange("step")}
-                  min={0}
-                  required
-                />
+                <input type="number" className="input-field" value={form.step} onChange={handleChange("step")} min={0} required />
               </div>
             </div>
+            
             <div>
               <label className="field-label">Amount</label>
-              <input
-                type="number"
-                step="0.01"
-                className="input-field"
-                value={form.amount}
-                onChange={handleChange("amount")}
-                min={0.01}
-                required
-              />
+              <input type="number" step="0.01" className="input-field" value={form.amount} onChange={handleChange("amount")} min={0.01} required />
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="field-label">Old Balance Orig</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="input-field"
-                  value={form.oldbalanceOrg}
-                  onChange={handleChange("oldbalanceOrg")}
-                  min={0}
-                  required
-                />
+                <input type="number" step="0.01" className="input-field" value={form.oldbalanceOrg} onChange={handleChange("oldbalanceOrg")} min={0} required />
               </div>
               <div>
                 <label className="field-label">New Balance Orig</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="input-field"
-                  value={form.newbalanceOrig}
-                  onChange={handleChange("newbalanceOrig")}
-                  min={0}
-                  required
-                />
+                <input type="number" step="0.01" className="input-field" value={form.newbalanceOrig} onChange={handleChange("newbalanceOrig")} min={0} required />
               </div>
             </div>
+            
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="field-label">Old Balance Dest</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="input-field"
-                  value={form.oldbalanceDest}
-                  onChange={handleChange("oldbalanceDest")}
-                  min={0}
-                  required
-                />
+                <input type="number" step="0.01" className="input-field" value={form.oldbalanceDest} onChange={handleChange("oldbalanceDest")} min={0} required />
               </div>
               <div>
                 <label className="field-label">New Balance Dest</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="input-field"
-                  value={form.newbalanceDest}
-                  onChange={handleChange("newbalanceDest")}
-                  min={0}
-                  required
-                />
+                <input type="number" step="0.01" className="input-field" value={form.newbalanceDest} onChange={handleChange("newbalanceDest")} min={0} required />
               </div>
             </div>
+
             <div>
               <label className="field-label">Browser Fingerprint (optional)</label>
-              <input
-                className="input-field"
-                value={form.browser_fingerprint}
-                onChange={handleChange("browser_fingerprint")}
-                placeholder="fp_9f3a2c…"
-              />
+              <input className="input-field" value={form.browser_fingerprint} onChange={handleChange("browser_fingerprint")} placeholder="fp_xyz..." />
             </div>
- 
-            <button type="submit" disabled={submitting} className="btn-primary w-full justify-center">
+
+            <button type="submit" disabled={submitting} className="btn-primary w-full justify-center mt-4">
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               {submitting ? "Assessing…" : "Run Risk Assessment"}
             </button>
- 
+
             {lastResult && (
-              <div className="mt-2 space-y-2 rounded-lg border border-vault-700 bg-vault-850 p-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Routing</span>
-                  <RoutingBadge decision={lastResult.routing_decision} />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Risk score</span>
-                  <RiskScoreBadge score={lastResult.final_risk_score} />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Latency</span>
-                  <span className="font-mono text-xs text-slate-300">
-                    {lastResult.latency_ms.toFixed(1)} ms
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500">{lastResult.message}</p>
-                {lastResult.vault_id && (
-                  <p className="font-mono text-[11px] text-risk-moderate">
-                    vault_id: {lastResult.vault_id}
-                  </p>
-                )}
-                {lastResult.honeypot_session_id && (
-                  <p className="font-mono text-[11px] text-risk-high">
-                    honeypot_session_id: {lastResult.honeypot_session_id}
-                  </p>
-                )}
+              <div className="mt-4 space-y-2 rounded-lg border border-vault-700 bg-vault-850 p-3 text-sm">
+                <div className="flex justify-between"><span className="text-slate-400">Routing</span><RoutingBadge decision={lastResult.routing_decision} /></div>
+                <div className="flex justify-between"><span className="text-slate-400">Risk Score</span><RiskScoreBadge score={lastResult.final_risk_score} /></div>
+                <div className="flex justify-between"><span className="text-slate-400">Latency</span><span className="font-mono text-xs text-slate-300">{lastResult.latency_ms.toFixed(1)} ms</span></div>
               </div>
             )}
           </form>
         </div>
- 
+
+        {/* XAI Defense Panels */}
         <div className="space-y-6 lg:col-span-3">
-          <div className="panel">
-            <div className="panel-header">
-              <h2 className="text-sm font-semibold text-slate-200">Routing Decisions (session)</h2>
+          {lastResult ? (
+            <div className="grid grid-cols-1 gap-6">
+              
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                {/* 1. Ensemble Weights */}
+                <div className="panel flex flex-col">
+                  <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">1. Ensemble Weights</h2></div>
+                  <div className="h-[280px] p-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={fusionWeightsData} dataKey="weight" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2}>
+                          {fusionWeightsData.map((e, i) => <Cell key={i} fill={["#5b6df8", "#12b3a8", "#f5b942", "#f2545b", "#9b51e0", "#ff8a65", "#4CAF50", "#FF9800", "#9E9E9E"][i % 9]} />)}
+                        </Pie>
+                        <Tooltip contentStyle={{ background: "#0e1424", border: "1px solid #1c2540", fontSize: "12px" }} formatter={(value: number) => `${value.toFixed(1)}%`} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* 2. Individual Model Scores */}
+                <div className="panel flex flex-col">
+                  <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">2. Separate Model Predictions</h2></div>
+                  <div className="h-[280px] p-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={individualScoresData} layout="vertical" margin={{ left: 25, right: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" />
+                        <XAxis type="number" domain={[0, 100]} stroke="#64748b" fontSize={10} />
+                        <YAxis type="category" dataKey="name" stroke="#64748b" fontSize={10} width={70} />
+                        <Tooltip contentStyle={{ background: "#0e1424", border: "1px solid #1c2540", fontSize: "12px" }} formatter={(value: number) => value.toFixed(1)} />
+                        <Bar dataKey="score" fill="#5b6df8" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. SHAP Feature Influence */}
+              <div className="panel flex flex-col">
+                <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">3. SHAP Feature Influence</h2></div>
+                <div className="h-[280px] p-2">
+                  {shapLoading ? (
+                     <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-500" /></div>
+                  ) : shapData ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={shapData} layout="vertical" margin={{ left: 30, right: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" />
+                        <XAxis type="number" stroke="#64748b" fontSize={10} />
+                        <YAxis type="category" dataKey="feature" stroke="#64748b" fontSize={10} width={80} />
+                        <Tooltip contentStyle={{ background: "#0e1424", border: "1px solid #1c2540", fontSize: "12px" }} />
+                        <Bar dataKey="impact" fill="#12b3a8" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                     <div className="flex h-full items-center justify-center text-xs text-slate-500">Failed to load SHAP</div>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="h-64 p-4">
-              {routingBreakdown.some((r) => r.value > 0) ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={routingBreakdown}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={55}
-                      outerRadius={85}
-                      paddingAngle={3}
-                    >
-                      {routingBreakdown.map((entry) => (
-                        <Cell key={entry.name} fill={ROUTING_COLORS[entry.name]} />
-                      ))}
-                    </Pie>
-                    <Legend />
-                    <Tooltip
-                      contentStyle={{ background: "#0e1424", border: "1px solid #1c2540" }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <EmptyState label="Run an assessment to populate routing analytics." />
-              )}
+          ) : (
+            <div className="flex h-full min-h-[300px] items-center justify-center rounded-xl border border-dashed border-vault-700/50 bg-vault-900/20 text-slate-500">
+              Submit a transaction to generate the Explainable AI (XAI) dashboard.
             </div>
-          </div>
- 
-          <div className="panel">
-            <div className="panel-header">
-              <h2 className="text-sm font-semibold text-slate-200">Recent Risk Scores</h2>
-            </div>
-            <div className="h-64 p-4">
-              {riskTimeline.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={riskTimeline}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" />
-                    <XAxis dataKey="index" stroke="#64748b" fontSize={12} />
-                    <YAxis stroke="#64748b" fontSize={12} domain={[0, 100]} />
-                    <Tooltip contentStyle={{ background: "#0e1424", border: "1px solid #1c2540" }} />
-                    <Bar dataKey="risk" fill="#5b6df8" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <EmptyState label="No assessments yet this session." />
-              )}
-            </div>
-          </div>
+          )}
         </div>
       </div>
- 
+
       <div className="panel">
         <div className="panel-header">
           <h2 className="text-sm font-semibold text-slate-200">Sandbox Transaction Log (session)</h2>
@@ -432,11 +398,11 @@ export const Sandbox: React.FC = () => {
     </div>
   );
 };
- 
+
 const EmptyState: React.FC<{ label: string }> = ({ label }) => (
   <div className="flex h-full items-center justify-center text-center text-sm text-slate-500">
     {label}
   </div>
 );
- 
+
 export default Sandbox;

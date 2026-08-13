@@ -1,4 +1,3 @@
- 
 export type UserRole = "user" | "admin";
  
 export interface UserOut {
@@ -30,7 +29,7 @@ export interface TransactionAssessRequest {
   browser_fingerprint?: string;
 }
  
-export type RoutingDecision = "approve" | "vault" | "honeypot";
+export type RoutingDecision = "approve" | "vault" | "honeypot" | "auto_reject";
  
 export interface TransactionAssessResponse {
   transaction_id: string;
@@ -40,6 +39,9 @@ export interface TransactionAssessResponse {
   latency_ms: number;
   honeypot_session_id?: string | null;
   vault_id?: string | null;
+  auto_reject_id?: string | null;
+  individual_scores?: Record<string, number>;
+  fusion_weights?: Record<string, number>;
 }
  
 export interface VaultOTPVerifyRequest {
@@ -122,7 +124,6 @@ export interface AttackerProfilingResult {
   n_clusters?: number;
 }
  
-
 export interface ShapFeatureContribution {
   feature: string;
   impact: number;
@@ -135,14 +136,11 @@ export interface ShapExplanationResponse {
   predicted_score?: number;
 }
  
-
 export interface RetrainTriggerResponse {
   status: string;
   message?: string;
   job_id?: string;
 }
- 
-
  
 export type TransactionSource = "system_auto" | "manual_sandbox";
  
@@ -153,6 +151,7 @@ export interface TransactionAnalyticsSummary {
   total_volume: number;
   approve_count: number;
   vault_count: number;
+  block_count: number;          // New Block Tier
   honeypot_count: number;
   flagged_count: number; // vault_count + honeypot_count
   fraud_rate: number; // flagged_count / total_transactions, 0 when total is 0
@@ -165,6 +164,7 @@ export interface TransactionTimeseriesPoint {
   total: number;
   approve_count: number;
   vault_count: number;
+  block_count: number;          // New Block Tier
   honeypot_count: number;
   flagged_count: number;
 }
@@ -247,4 +247,79 @@ export interface AccountBlockStatusOut {
   reason?: string | null;
   blocked_by?: string | null;
   blocked_at?: string | null;
+}
+
+// --- Customer-facing website (Part 4) ---
+export interface CustomerRegisterRequest {
+  full_name: string;
+  email: string;
+  password: string;
+  opening_balance?: number;
+}
+
+export interface CustomerLoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface CustomerAuthResponse {
+  access_token: string;
+  token_type: string;
+  account_id: string;
+  full_name: string;
+}
+
+export interface BalanceOut {
+  account_id: string;
+  amount: number;
+  updated_at: string;
+}
+
+export interface CustomerTransactionOut {
+  id: string;
+  name_orig: string;
+  name_dest: string;
+  type: string;
+  amount: number;
+  routing_decision?: string | null;
+  status: string;
+  timestamp: string;
+}
+
+// --- Honeypot decoy endpoints (Part 5 — full automation) ---
+export interface DecoyBalanceRequest {
+  account_id: string;
+  browser_fingerprint?: string;
+  simulated_ip?: string;
+}
+
+export interface DecoyBalanceResponse {
+  account_id: string;
+  balance: number;
+  updated_at: string;
+}
+
+export interface DecoyTransferRequest {
+  name_dest: string;
+  amount: number;
+  browser_fingerprint?: string;
+  simulated_ip?: string;
+}
+
+export interface DecoyTransferResponse {
+  transaction_id: string;
+  status: string;
+  message: string;
+  threat_score: number;
+}
+
+export interface DecoyOtpRequest {
+  otp: string;
+  browser_fingerprint?: string;
+  simulated_ip?: string;
+}
+
+export interface DecoyOtpResponse {
+  verified: boolean;
+  threat_score: number;
 }
