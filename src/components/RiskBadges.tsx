@@ -1,5 +1,5 @@
 import React from "react";
-import { CheckCircle2, Lock, Bug } from "lucide-react";
+import { CheckCircle2, Lock, Bug, Ban } from "lucide-react";
 import type { RoutingDecision } from "@/types/api";
 
 export function riskTier(score: number): "low" | "moderate" | "high" | "critical" {
@@ -39,6 +39,11 @@ const ROUTING_STYLES: Record<RoutingDecision, { label: string; className: string
     className: "bg-risk-high/15 text-risk-high",
     icon: <Bug className="h-3 w-3" />,
   },
+  auto_reject: {
+    label: "Auto Rejected",
+    className: "bg-risk-high/20 text-risk-high",
+    icon: <Ban className="h-3 w-3" />,
+  }
 };
 
 export const RoutingBadge: React.FC<{ decision: RoutingDecision }> = ({ decision }) => {
