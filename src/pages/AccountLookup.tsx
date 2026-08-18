@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { Search, ShieldOff, ShieldCheck as ShieldCheckIcon, Loader2 } from "lucide-react";
 import {
   getAccountTransactions,
-  getAccountStatus,
   blockAccount,
   unblockAccount,
   explainTransaction,
@@ -18,6 +17,9 @@ export const AccountLookup: React.FC = () => {
   const [shap, setShap] = useState<any>(null);
   const [shapLoading, setShapLoading] = useState(false);
   const [blockReason, setBlockReason] = useState("");
+  const [unblockReason, setUnblockReason] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function runSearch() {
     if (!accountId.trim()) return;
@@ -38,12 +40,41 @@ export const AccountLookup: React.FC = () => {
 
   async function toggleBlock() {
     if (!data) return;
+    setActionError(null);
     if (data.is_blocked) {
-      const res = await unblockAccount(data.account_id);
-      setData({ ...data, is_blocked: res.is_blocked });
+      const reason = unblockReason.trim();
+      if (!reason) {
+        setActionError("A justification is required to unblock this account.");
+        return;
+      }
+      if (!window.confirm(`Unblock account ${data.account_id}? This will be logged.`)) return;
+      setActionBusy(true);
+      try {
+        const res = await unblockAccount(data.account_id, reason);
+        setData({ ...data, is_blocked: res.is_blocked });
+        setUnblockReason("");
+      } catch (e: any) {
+        setActionError(e?.response?.data?.detail ?? "Failed to unblock account.");
+      } finally {
+        setActionBusy(false);
+      }
     } else {
-      const res = await blockAccount(data.account_id, blockReason || undefined);
-      setData({ ...data, is_blocked: res.is_blocked });
+      const reason = blockReason.trim();
+      if (!reason) {
+        setActionError("A justification is required to block this account.");
+        return;
+      }
+      if (!window.confirm(`Block account ${data.account_id}? This will be logged.`)) return;
+      setActionBusy(true);
+      try {
+        const res = await blockAccount(data.account_id, reason);
+        setData({ ...data, is_blocked: res.is_blocked });
+        setBlockReason("");
+      } catch (e: any) {
+        setActionError(e?.response?.data?.detail ?? "Failed to block account.");
+      } finally {
+        setActionBusy(false);
+      }
     }
   }
 
@@ -89,25 +120,34 @@ export const AccountLookup: React.FC = () => {
               <p className="text-sm text-slate-500">{data.total} transaction(s)</p>
             </div>
             <div className="flex items-center gap-2">
-              {!data.is_blocked && (
-                <input
-                  value={blockReason}
-                  onChange={(e) => setBlockReason(e.target.value)}
-                  placeholder="Reason (optional)"
-                  className="rounded-lg border border-vault-700 bg-vault-950 px-2 py-1 text-sm text-slate-100"
-                />
-              )}
+              <input
+                value={data.is_blocked ? unblockReason : blockReason}
+                onChange={(e) =>
+                  data.is_blocked ? setUnblockReason(e.target.value) : setBlockReason(e.target.value)
+                }
+                placeholder={data.is_blocked ? "Reason for unblocking (required)" : "Reason for blocking (required)"}
+                className="rounded-lg border border-vault-700 bg-vault-950 px-2 py-1 text-sm text-slate-100"
+              />
               <button
                 onClick={toggleBlock}
-                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium ${
+                disabled={actionBusy || (data.is_blocked ? !unblockReason.trim() : !blockReason.trim())}
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                   data.is_blocked ? "bg-emerald-600 text-white" : "bg-red-600 text-white"
                 }`}
               >
-                {data.is_blocked ? <ShieldCheckIcon className="h-4 w-4" /> : <ShieldOff className="h-4 w-4" />}
+                {actionBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : data.is_blocked ? (
+                  <ShieldCheckIcon className="h-4 w-4" />
+                ) : (
+                  <ShieldOff className="h-4 w-4" />
+                )}
                 {data.is_blocked ? "Unblock Account" : "Block Account"}
               </button>
             </div>
           </div>
+
+          {actionError && <p className="text-red-400 text-sm">{actionError}</p>}
 
           <table className="w-full text-sm text-slate-200">
             <thead>

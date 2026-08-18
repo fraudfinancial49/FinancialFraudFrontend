@@ -37,7 +37,7 @@ const METRIC_KEYS: { key: string; label: string }[] = [
   { key: "mcc", label: "MCC" },
 ];
 
-type RoutingFilter = "all" | "approve" | "vault" | "honeypot";
+type RoutingFilter = "all" | "approve" | "otp_verification" | "auto_reject" | "honeypot";
 
 const PAGE_SIZE = 50;
 
@@ -204,8 +204,10 @@ export const ModelPerformance: React.FC = () => {
     switch (decision) {
       case "approve":
         return "border-risk-low/40 bg-risk-low/10 text-risk-low";
-      case "vault":
+      case "otp_verification":
         return "border-accent-indigo/40 bg-accent-indigo/10 text-accent-indigo";
+      case "auto_reject":
+        return "border-risk-critical/40 bg-risk-critical/10 text-risk-critical";
       case "honeypot":
         return "border-risk-high/40 bg-risk-high/10 text-risk-high";
       default:
@@ -354,7 +356,8 @@ export const ModelPerformance: React.FC = () => {
             >
               <option value="all">All</option>
               <option value="approve">Approve</option>
-              <option value="vault">Vault</option>
+              <option value="otp_verification">Safe Vault (OTP)</option>
+              <option value="auto_reject">Auto-Reject</option>
               <option value="honeypot">Honeypot</option>
             </select>
             <button onClick={fetchTransactions} disabled={txLoading} className="btn-secondary shrink-0">

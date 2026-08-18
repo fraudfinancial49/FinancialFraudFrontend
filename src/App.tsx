@@ -9,7 +9,6 @@ import Login from "@/pages/Login";
 import Overview from "@/pages/Overview";
 import Sandbox from "@/pages/Sandbox";
 import SafeVault from "@/pages/SafeVault";
-import ThreatIntelligence from "@/pages/ThreatIntelligence";
 import AccountLookup from "@/pages/AccountLookup";
 import AttackerProfiles from "@/pages/AttackerProfiles";
 import ModelPerformance from "@/pages/ModelPerformance";
@@ -34,7 +33,6 @@ const App: React.FC = () => {
                 <Route path="/overview" element={<Overview />} />
                 <Route path="/sandbox" element={<Sandbox />} />
                 <Route path="/safe-vault" element={<SafeVault />} />
-                <Route path="/threat-intelligence" element={<ThreatIntelligence />} />
                 <Route
                   path="/attacker-profiles"
                   element={

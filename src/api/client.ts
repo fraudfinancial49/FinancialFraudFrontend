@@ -136,13 +136,13 @@ export async function getAccountStatus(accountId: string) {
   return data;
 }
 
-export async function blockAccount(accountId: string, reason?: string) {
+export async function blockAccount(accountId: string, reason: string) {
   const { data } = await apiClient.post(`/api/v1/admin/accounts/${accountId}/block`, { reason });
   return data;
 }
 
-export async function unblockAccount(accountId: string) {
-  const { data } = await apiClient.post(`/api/v1/admin/accounts/${accountId}/unblock`);
+export async function unblockAccount(accountId: string, reason: string) {
+  const { data } = await apiClient.post(`/api/v1/admin/accounts/${accountId}/unblock`, { reason });
   return data;
 }
 
@@ -154,6 +154,22 @@ export async function explainTransaction(transactionId: string) {
 // --- Part 5: Honeypot Event Telemetry ---
 export async function getHoneypotEvents(sessionId: string) {
   const { data } = await apiClient.get(`/api/v1/honeypot/${sessionId}/events`);
+  return data;
+}
+
+// --- Threat Intelligence: attacker profiles + K-Means clustering ---
+export async function getAttackerProfiles() {
+  const { data } = await apiClient.get(`/api/v1/admin/attacker-profiles`);
+  return data;
+}
+
+export async function runAttackerProfiling() {
+  const { data } = await apiClient.post(`/api/v1/admin/run-attacker-profiling`);
+  return data;
+}
+
+export async function getAttackerTimeline(fingerprint: string) {
+  const { data } = await apiClient.get(`/api/v1/admin/attacker-profiles/${fingerprint}/timeline`);
   return data;
 }
 

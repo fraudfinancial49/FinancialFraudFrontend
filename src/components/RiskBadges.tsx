@@ -29,7 +29,7 @@ const ROUTING_STYLES: Record<RoutingDecision, { label: string; className: string
     className: "bg-risk-low/15 text-risk-low",
     icon: <CheckCircle2 className="h-3 w-3" />,
   },
-  vault: {
+  otp_verification: {
     label: "Safe Vault",
     className: "bg-risk-moderate/15 text-risk-moderate",
     icon: <Lock className="h-3 w-3" />,
@@ -41,13 +41,23 @@ const ROUTING_STYLES: Record<RoutingDecision, { label: string; className: string
   },
   auto_reject: {
     label: "Auto Rejected",
-    className: "bg-risk-high/20 text-risk-high",
+    className: "bg-risk-critical/20 text-risk-critical",
     icon: <Ban className="h-3 w-3" />,
   }
 };
 
-export const RoutingBadge: React.FC<{ decision: RoutingDecision }> = ({ decision }) => {
-  const style = ROUTING_STYLES[decision];
+const UNKNOWN_STYLE = {
+  label: "Unknown",
+  className: "bg-vault-800 text-slate-400",
+  icon: null as React.ReactNode,
+};
+
+export const RoutingBadge: React.FC<{ decision: string }> = ({ decision }) => {
+  // Falls back instead of throwing if the backend ever sends a routing_decision
+  // string outside the known set (e.g. a not-yet-updated deployment still using
+  // an old tier name) -- a bad/unmapped value should degrade gracefully, not
+  // take down the whole page.
+  const style = ROUTING_STYLES[decision as RoutingDecision] ?? { ...UNKNOWN_STYLE, label: decision || "Unknown" };
   return (
     <span className={`badge ${style.className}`}>
       {style.icon}

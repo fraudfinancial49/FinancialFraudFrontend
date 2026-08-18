@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Users, PlayCircle, Loader2, AlertCircle, RefreshCw, Info } from "lucide-react";
-import apiClient from "@/api/client";
+import { Users, PlayCircle, Loader2, AlertCircle, RefreshCw, Info, ChevronDown, ChevronRight } from "lucide-react";
+import { getAttackerProfiles, runAttackerProfiling, getAttackerTimeline } from "@/api/client";
 import { useToast } from "@/components/Toast";
-import type { AttackerProfilingResult, GenericStatus } from "@/types/api";
 
 const CLUSTER_LABELS = ["Automated Bot", "Slow Prober", "Credential Stuffer", "Opportunistic Tester"];
 
@@ -19,18 +18,44 @@ interface DBAttackerProfile {
   last_seen_at: string;
 }
 
+interface TimelineEvent {
+  event_id: string;
+  event_type: string | null;
+  stage: string | null;
+  detail: string | null;
+  payload: Record<string, unknown> | null;
+  occurred_at: string | null;
+}
+
+interface TimelineSession {
+  session_id: string;
+  simulated_ip: string | null;
+  actual_ip: string | null;
+  location: string | null;
+  stage: string;
+  risk_score_at_entry: number;
+  started_at: string | null;
+  closed_at: string | null;
+  events: TimelineEvent[];
+}
+
 export const AttackerProfiles: React.FC = () => {
   const { pushToast } = useToast();
-  
+
   const [profiles, setProfiles] = useState<DBAttackerProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [expandedFingerprint, setExpandedFingerprint] = useState<string | null>(null);
+  const [timelineSessions, setTimelineSessions] = useState<TimelineSession[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+
   const fetchProfiles = async () => {
     setLoading(true);
     try {
-      const { data } = await apiClient.get<DBAttackerProfile[]>("/api/v1/admin/attacker-profiles");
+      const data = await getAttackerProfiles();
       setProfiles(data);
     } catch (err) {
       console.error("Failed to load profiles");
@@ -47,9 +72,7 @@ export const AttackerProfiles: React.FC = () => {
     setBusy(true);
     setError(null);
     try {
-      const { data } = await apiClient.post<GenericStatus<AttackerProfilingResult>>(
-        "/api/v1/admin/run-attacker-profiling"
-      );
+      const data = await runAttackerProfiling();
       pushToast("success", data.message || "Attacker profiling job completed.");
       await fetchProfiles(); // Refresh the table with new clusters
     } catch (err: any) {
@@ -59,16 +82,36 @@ export const AttackerProfiles: React.FC = () => {
     }
   };
 
+  const toggleTimeline = async (fingerprint: string) => {
+    if (expandedFingerprint === fingerprint) {
+      setExpandedFingerprint(null);
+      return;
+    }
+    setExpandedFingerprint(fingerprint);
+    setTimelineSessions([]);
+    setTimelineError(null);
+    setTimelineLoading(true);
+    try {
+      const data = await getAttackerTimeline(fingerprint);
+      setTimelineSessions(data.sessions ?? []);
+    } catch (err: any) {
+      setTimelineError(err?.response?.data?.detail || "Failed to load event timeline for this fingerprint.");
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-50">Attacker Profiles</h1>
+          <h1 className="text-xl font-bold text-slate-50">Threat Intelligence</h1>
           <p className="text-sm text-slate-500">
-            Batch K-Means clustering over honeypot telemetry. This process runs automatically via scheduled background tasks.
+            Categorized attacker profiles from batch K-Means clustering over honeypot telemetry, with true
+            network origin and a full chronological event timeline per fingerprint.
           </p>
         </div>
-        <button onClick={runProfiling} disabled={busy} className="btn-primary shrink-0" title="Force an off-schedule manual run">
+        <button onClick={runProfiling} disabled={busy} className="btn-primary shrink-0" title="Run the K-Means clustering job now">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
           {busy ? "Running Job…" : "Force Manual Run"}
         </button>
@@ -77,7 +120,8 @@ export const AttackerProfiles: React.FC = () => {
       <div className="flex items-start gap-2 rounded-lg border border-vault-700 bg-vault-850 px-3 py-2 text-xs text-slate-500">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-indigo" />
         <span>
-          <strong>Automated Production Architecture:</strong> In a live environment, the backend executes this K-Means clustering model automatically (e.g., nightly CRON job). The "Force Manual Run" button is provided for on-demand forensic analysis.
+          <strong>Manual-trigger job:</strong> clustering runs on demand via "Force Manual Run" — threat scores
+          themselves update in realtime with every honeypot interaction, independently of this batch job.
         </span>
       </div>
 
@@ -113,10 +157,11 @@ export const AttackerProfiles: React.FC = () => {
             Refresh DB
           </button>
         </div>
-        <div className="max-h-[600px] overflow-y-auto">
+        <div className="max-h-[700px] overflow-y-auto">
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 bg-vault-900 text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                <th className="px-4 py-2 w-6"></th>
                 <th className="px-4 py-2">Fingerprint</th>
                 <th className="px-4 py-2">Classification</th>
                 <th className="px-4 py-2">Threat Score</th>
@@ -128,32 +173,104 @@ export const AttackerProfiles: React.FC = () => {
             </thead>
             <tbody>
               {loading && profiles.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
               ) : profiles.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">No attacker profiles mapped yet. Waiting for honeypot telemetry.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">No attacker profiles mapped yet. Waiting for honeypot telemetry.</td></tr>
               ) : (
-                profiles.map((p) => (
-                  <tr key={p.browser_fingerprint} className="border-t border-vault-700/60 hover:bg-vault-800/30">
-                    <td className="px-4 py-2 font-mono text-slate-300">{p.browser_fingerprint.slice(0, 16)}…</td>
-                    <td className="px-4 py-2">
-                      <span className="badge bg-vault-800 text-slate-400">{p.cluster_label}</span>
-                    </td>
-                    <td className="px-4 py-2 text-risk-high font-bold">{p.threat_score.toFixed(1)}</td>
-                    <td className="px-4 py-2">
-                      {p.actual_ip ? (
-                        <div>
-                          <div className="text-slate-300 font-mono text-xs">{p.actual_ip}</div>
-                          <div className="text-xs text-slate-500">{p.location || "Unknown"}</div>
-                        </div>
-                      ) : (
-                        <span className="text-slate-500">—</span>
+                profiles.map((p) => {
+                  const isExpanded = expandedFingerprint === p.browser_fingerprint;
+                  return (
+                    <React.Fragment key={p.browser_fingerprint}>
+                      <tr
+                        className="cursor-pointer border-t border-vault-700/60 hover:bg-vault-800/30"
+                        onClick={() => toggleTimeline(p.browser_fingerprint)}
+                      >
+                        <td className="px-4 py-2 text-slate-500">
+                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </td>
+                        <td className="px-4 py-2 font-mono text-slate-300">{p.browser_fingerprint.slice(0, 16)}…</td>
+                        <td className="px-4 py-2">
+                          <span className="badge bg-vault-800 text-slate-400">{p.cluster_label}</span>
+                        </td>
+                        <td className="px-4 py-2 text-risk-high font-bold">{p.threat_score.toFixed(1)}</td>
+                        <td className="px-4 py-2">
+                          {p.actual_ip ? (
+                            <div>
+                              <div className="text-slate-300 font-mono text-xs">{p.actual_ip}</div>
+                              <div className="text-xs text-slate-500">{p.location || "Unknown"}</div>
+                            </div>
+                          ) : (
+                            <span className="text-slate-500">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-slate-400">{p.total_sessions}</td>
+                        <td className="px-4 py-2 text-slate-400">{p.avg_events_per_session.toFixed(1)}</td>
+                        <td className="px-4 py-2 text-slate-500">{new Date(p.last_seen_at).toLocaleDateString()}</td>
+                      </tr>
+
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={8} className="bg-vault-950 p-4 border-b border-vault-700/60">
+                            {timelineLoading ? (
+                              <div className="flex items-center justify-center py-6">
+                                <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+                              </div>
+                            ) : timelineError ? (
+                              <p className="text-xs text-risk-high">{timelineError}</p>
+                            ) : timelineSessions.length === 0 ? (
+                              <p className="text-xs text-slate-500">No honeypot sessions found for this fingerprint.</p>
+                            ) : (
+                              <div className="space-y-4">
+                                {timelineSessions.map((s) => (
+                                  <div key={s.session_id} className="rounded border border-vault-700 bg-vault-900 p-3">
+                                    <div className="mb-3 grid grid-cols-2 gap-4 rounded bg-vault-850 p-3 border border-vault-700 sm:grid-cols-4">
+                                      <div>
+                                        <span className="text-xs text-slate-500 block">Session</span>
+                                        <span className="text-xs font-mono text-slate-300">{s.session_id.slice(0, 12)}…</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-xs text-slate-500 block">Actual Network IP</span>
+                                        <span className="text-sm text-risk-high font-mono">{s.actual_ip || "Capturing..."}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-xs text-slate-500 block">Geo-Location</span>
+                                        <span className="text-sm text-slate-200">{s.location || "Unknown"}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-xs text-slate-500 block">Started</span>
+                                        <span className="text-xs text-slate-300">{s.started_at ? new Date(s.started_at).toLocaleString() : "—"}</span>
+                                      </div>
+                                    </div>
+
+                                    <h4 className="text-sm font-semibold text-accent-indigo mb-3">Activity Timeline</h4>
+                                    {s.events.length === 0 ? (
+                                      <p className="text-xs text-slate-500">No detailed events logged yet.</p>
+                                    ) : (
+                                      <ul className="space-y-3 border-l-2 border-vault-700 ml-2 pl-4 max-h-64 overflow-y-auto">
+                                        {s.events.map((ev) => (
+                                          <li key={ev.event_id} className="relative">
+                                            <div className={`absolute -left-[21px] top-1.5 h-2 w-2 rounded-full ${ev.stage === "micro_interaction" ? "bg-slate-600" : "bg-accent-indigo"}`}></div>
+                                            <p className={`text-xs font-mono ${ev.stage === "micro_interaction" ? "text-slate-500" : "text-slate-400"}`}>
+                                              {ev.occurred_at ? new Date(ev.occurred_at).toLocaleTimeString() : "—"} —
+                                              <span className="font-semibold ml-1">{ev.stage === "micro_interaction" ? "Click Event" : ev.stage}</span>
+                                            </p>
+                                            <p className={`text-xs mt-0.5 ${ev.stage === "micro_interaction" ? "text-slate-400" : "text-slate-200 text-sm"}`}>
+                                              {ev.detail}
+                                            </p>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                    <td className="px-4 py-2 text-slate-400">{p.total_sessions}</td>
-                    <td className="px-4 py-2 text-slate-400">{p.avg_events_per_session.toFixed(1)}</td>
-                    <td className="px-4 py-2 text-slate-500">{new Date(p.last_seen_at).toLocaleDateString()}</td>
-                  </tr>
-                ))
+                    </React.Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>

@@ -49,9 +49,9 @@ const DEFAULT_FORM: TransactionAssessRequest = {
 
 const ROUTING_COLORS: Record<string, string> = {
   approve: "#2fd97f",
-  vault: "#f5b942",
+  otp_verification: "#f5b942",
+  auto_reject: "#c0203a",
   honeypot: "#f2545b",
-  auto_reject: "#f2545b",
 };
 
 export const Sandbox: React.FC = () => {
@@ -76,7 +76,7 @@ export const Sandbox: React.FC = () => {
   }, [transactions]);
 
   const routingBreakdown = useMemo(() => {
-    const counts: Record<string, number> = { approve: 0, vault: 0, honeypot: 0, auto_reject: 0 };
+    const counts: Record<string, number> = { approve: 0, otp_verification: 0, honeypot: 0, auto_reject: 0 };
     transactions.forEach((t) => {
       counts[t.routing_decision] = (counts[t.routing_decision] ?? 0) + 1;
     });
@@ -147,7 +147,7 @@ export const Sandbox: React.FC = () => {
   const individualScoresData = useMemo(() => {
     if (!lastResult?.individual_scores) return [];
     return Object.entries(lastResult.individual_scores).map(([name, score]) => ({
-      name: name.replace("_", " "),
+      name: name.replace(/_/g, " "),
       score: score * 100, // Convert probability to 0-100 scale
     }));
   }, [lastResult]);
@@ -155,7 +155,7 @@ export const Sandbox: React.FC = () => {
   const fusionWeightsData = useMemo(() => {
     if (!lastResult?.fusion_weights) return [];
     return Object.entries(lastResult.fusion_weights).map(([name, weight]) => ({
-      name: name.replace("_", " "),
+      name: name.replace(/_/g, " "),
       weight: weight * 100, // Convert to percentage
     }));
   }, [lastResult]);
@@ -165,7 +165,7 @@ export const Sandbox: React.FC = () => {
       <div className="flex items-center gap-2">
         <FlaskConical className="h-5 w-5 text-accent-teal" />
         <div>
-          <h1 className="text-xl font-bold text-slate-50">Sandbox & XAI Evaluation</h1>
+          <h1 className="text-xl font-bold text-slate-50">Evaluation Dashboard</h1>
           <p className="text-sm text-slate-500">
             Submit a transaction to instantly view its hybrid routing decision, ensemble weights, individual model predictions, and SHAP feature influence.
           </p>
@@ -295,6 +295,7 @@ export const Sandbox: React.FC = () => {
                           {fusionWeightsData.map((e, i) => <Cell key={i} fill={["#5b6df8", "#12b3a8", "#f5b942", "#f2545b", "#9b51e0", "#ff8a65", "#4CAF50", "#FF9800", "#9E9E9E"][i % 9]} />)}
                         </Pie>
                         <Tooltip contentStyle={{ background: "#0e1424", border: "1px solid #1c2540", fontSize: "12px" }} formatter={(value: number) => `${value.toFixed(1)}%`} />
+                        <Legend wrapperStyle={{ fontSize: "11px" }} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -398,11 +399,5 @@ export const Sandbox: React.FC = () => {
     </div>
   );
 };
-
-const EmptyState: React.FC<{ label: string }> = ({ label }) => (
-  <div className="flex h-full items-center justify-center text-center text-sm text-slate-500">
-    {label}
-  </div>
-);
 
 export default Sandbox;

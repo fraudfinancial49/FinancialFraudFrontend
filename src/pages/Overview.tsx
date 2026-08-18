@@ -127,6 +127,8 @@ const ROUTING_COLORS: Record<string, string> = {
 
   vault_count: "#f5b942",
 
+  auto_reject_count: "#c0203a",
+
   honeypot_count: "#f2545b",
 
 };
@@ -417,7 +419,7 @@ export const Overview: React.FC = () => {
 
           <div className="flex items-center justify-between">
 
-            <span className="text-xs uppercase tracking-wide text-slate-500">Flagged (Vault + Honeypot)</span>
+            <span className="text-xs uppercase tracking-wide text-slate-500">Flagged (Vault + Auto-Reject + Honeypot)</span>
 
             <ShieldAlert className="h-4 w-4 text-risk-high" />
 
@@ -502,6 +504,8 @@ export const Overview: React.FC = () => {
               <Bar dataKey="approve_count" stackId="a" name="Approved" fill={ROUTING_COLORS.approve_count} />
 
               <Bar dataKey="vault_count" stackId="a" name="Safe Vault" fill={ROUTING_COLORS.vault_count} />
+
+              <Bar dataKey="auto_reject_count" stackId="a" name="Auto Rejected" fill={ROUTING_COLORS.auto_reject_count} />
 
               <Bar dataKey="honeypot_count" stackId="a" name="Honeypot" fill={ROUTING_COLORS.honeypot_count} />
 

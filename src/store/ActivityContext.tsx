@@ -57,7 +57,7 @@ export const ActivityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       };
       setTransactions((prev) => [record, ...prev].slice(0, 500));
  
-      if (response.routing_decision === "vault" && response.vault_id) {
+      if (response.routing_decision === "otp_verification" && response.vault_id) {
         setVaultCases((prev) => [
           {
             vault_id: response.vault_id as string,

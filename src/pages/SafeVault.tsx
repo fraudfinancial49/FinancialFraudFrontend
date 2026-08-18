@@ -219,11 +219,6 @@ export const SafeVault: React.FC = () => {
             <div className="rounded-lg border border-vault-700 bg-vault-850 p-3 text-xs text-slate-300">
               <p className="font-semibold text-slate-200">{otpMessage.status}</p>
               <p className="text-slate-500">{otpMessage.message}</p>
-              {otpMessage.data?.otp_code ? (
-                <p className="mt-1 font-mono text-accent-teal">
-                  Issued code (dev/demo only): {String(otpMessage.data.otp_code)}
-                </p>
-              ) : null}
             </div>
           )}
         </form>

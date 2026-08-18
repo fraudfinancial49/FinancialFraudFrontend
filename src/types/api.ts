@@ -29,7 +29,7 @@ export interface TransactionAssessRequest {
   browser_fingerprint?: string;
 }
  
-export type RoutingDecision = "approve" | "vault" | "honeypot" | "auto_reject";
+export type RoutingDecision = "approve" | "otp_verification" | "honeypot" | "auto_reject";
  
 export interface TransactionAssessResponse {
   transaction_id: string;
@@ -151,9 +151,10 @@ export interface TransactionAnalyticsSummary {
   total_volume: number;
   approve_count: number;
   vault_count: number;
+  auto_reject_count: number;
   block_count: number;          // New Block Tier
   honeypot_count: number;
-  flagged_count: number; // vault_count + honeypot_count
+  flagged_count: number; // vault_count + auto_reject_count + honeypot_count + block_count
   fraud_rate: number; // flagged_count / total_transactions, 0 when total is 0
   avg_risk_score: number;
   avg_latency_ms: number;
@@ -164,6 +165,7 @@ export interface TransactionTimeseriesPoint {
   total: number;
   approve_count: number;
   vault_count: number;
+  auto_reject_count: number;
   block_count: number;          // New Block Tier
   honeypot_count: number;
   flagged_count: number;
