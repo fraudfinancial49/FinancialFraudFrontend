@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   BrainCircuit,
   RefreshCw,
@@ -73,6 +73,7 @@ export const XAIExplorer: React.FC = () => {
   const [narrative, setNarrative] = useState<string | null>(null);
   const [narrativeLoading, setNarrativeLoading] = useState(false);
   const [narrativeError, setNarrativeError] = useState<string | null>(null);
+  const explainabilityPanelRef = useRef<HTMLDivElement | null>(null);
 
   const fetchTransactions = useCallback(async () => {
     setTxLoading(true);
@@ -193,6 +194,7 @@ export const XAIExplorer: React.FC = () => {
   function selectTransaction(tx: TransactionListItem) {
     setSelectedTx(tx);
     setSelectedTxId(tx.transaction_id);
+    explainabilityPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   // Search filters only the currently loaded page
@@ -374,7 +376,7 @@ export const XAIExplorer: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div ref={explainabilityPanelRef} className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="panel p-5">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-200">
             <BrainCircuit className="h-4 w-4 text-accent-teal" />
