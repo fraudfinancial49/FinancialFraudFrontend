@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Users, PlayCircle, Loader2, AlertCircle, RefreshCw, Info, ChevronDown, ChevronRight } from "lucide-react";
-import { getAttackerProfiles, runAttackerProfiling, getAttackerTimeline } from "@/api/client";
+import { Users, PlayCircle, Loader2, AlertCircle, RefreshCw, Info } from "lucide-react";
+import { getAttackerProfiles, runAttackerProfiling } from "@/api/client";
 import { useToast } from "@/components/Toast";
 
 const CLUSTER_LABELS = ["Automated Bot", "Slow Prober", "Credential Stuffer", "Opportunistic Tester"];
@@ -18,27 +18,6 @@ interface DBAttackerProfile {
   last_seen_at: string;
 }
 
-interface TimelineEvent {
-  event_id: string;
-  event_type: string | null;
-  stage: string | null;
-  detail: string | null;
-  payload: Record<string, unknown> | null;
-  occurred_at: string | null;
-}
-
-interface TimelineSession {
-  session_id: string;
-  simulated_ip: string | null;
-  actual_ip: string | null;
-  location: string | null;
-  stage: string;
-  risk_score_at_entry: number;
-  started_at: string | null;
-  closed_at: string | null;
-  events: TimelineEvent[];
-}
-
 export const AttackerProfiles: React.FC = () => {
   const { pushToast } = useToast();
 
@@ -46,11 +25,6 @@ export const AttackerProfiles: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const [expandedFingerprint, setExpandedFingerprint] = useState<string | null>(null);
-  const [timelineSessions, setTimelineSessions] = useState<TimelineSession[]>([]);
-  const [timelineLoading, setTimelineLoading] = useState(false);
-  const [timelineError, setTimelineError] = useState<string | null>(null);
 
   const fetchProfiles = async () => {
     setLoading(true);
@@ -79,25 +53,6 @@ export const AttackerProfiles: React.FC = () => {
       setError(err?.response?.data?.detail || "Failed to trigger the attacker profiling job.");
     } finally {
       setBusy(false);
-    }
-  };
-
-  const toggleTimeline = async (fingerprint: string) => {
-    if (expandedFingerprint === fingerprint) {
-      setExpandedFingerprint(null);
-      return;
-    }
-    setExpandedFingerprint(fingerprint);
-    setTimelineSessions([]);
-    setTimelineError(null);
-    setTimelineLoading(true);
-    try {
-      const data = await getAttackerTimeline(fingerprint);
-      setTimelineSessions(data.sessions ?? []);
-    } catch (err: any) {
-      setTimelineError(err?.response?.data?.detail || "Failed to load event timeline for this fingerprint.");
-    } finally {
-      setTimelineLoading(false);
     }
   };
 
@@ -178,16 +133,10 @@ export const AttackerProfiles: React.FC = () => {
                 <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">No attacker profiles mapped yet. Waiting for honeypot telemetry.</td></tr>
               ) : (
                 profiles.map((p) => {
-                  const isExpanded = expandedFingerprint === p.browser_fingerprint;
                   return (
                     <React.Fragment key={p.browser_fingerprint}>
-                      <tr
-                        className="cursor-pointer border-t border-vault-700/60 hover:bg-vault-800/30"
-                        onClick={() => toggleTimeline(p.browser_fingerprint)}
-                      >
-                        <td className="px-4 py-2 text-slate-500">
-                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </td>
+                      <tr className="border-t border-vault-700/60 hover:bg-vault-800/30">
+                        <td className="px-4 py-2 w-6"></td>
                         <td className="px-4 py-2 font-mono text-slate-300">{p.browser_fingerprint.slice(0, 16)}…</td>
                         <td className="px-4 py-2">
                           <span className="badge bg-vault-800 text-slate-400">{p.cluster_label}</span>
@@ -207,67 +156,6 @@ export const AttackerProfiles: React.FC = () => {
                         <td className="px-4 py-2 text-slate-400">{p.avg_events_per_session.toFixed(1)}</td>
                         <td className="px-4 py-2 text-slate-500">{new Date(p.last_seen_at).toLocaleDateString()}</td>
                       </tr>
-
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan={8} className="bg-vault-950 p-4 border-b border-vault-700/60">
-                            {timelineLoading ? (
-                              <div className="flex items-center justify-center py-6">
-                                <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
-                              </div>
-                            ) : timelineError ? (
-                              <p className="text-xs text-risk-high">{timelineError}</p>
-                            ) : timelineSessions.length === 0 ? (
-                              <p className="text-xs text-slate-500">No honeypot sessions found for this fingerprint.</p>
-                            ) : (
-                              <div className="space-y-4">
-                                {timelineSessions.map((s) => (
-                                  <div key={s.session_id} className="rounded border border-vault-700 bg-vault-900 p-3">
-                                    <div className="mb-3 grid grid-cols-2 gap-4 rounded bg-vault-850 p-3 border border-vault-700 sm:grid-cols-4">
-                                      <div>
-                                        <span className="text-xs text-slate-500 block">Session</span>
-                                        <span className="text-xs font-mono text-slate-300">{s.session_id.slice(0, 12)}…</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-xs text-slate-500 block">Actual Network IP</span>
-                                        <span className="text-sm text-risk-high font-mono">{s.actual_ip || "Capturing..."}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-xs text-slate-500 block">Geo-Location</span>
-                                        <span className="text-sm text-slate-200">{s.location || "Unknown"}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-xs text-slate-500 block">Started</span>
-                                        <span className="text-xs text-slate-300">{s.started_at ? new Date(s.started_at).toLocaleString() : "—"}</span>
-                                      </div>
-                                    </div>
-
-                                    <h4 className="text-sm font-semibold text-accent-indigo mb-3">Activity Timeline</h4>
-                                    {s.events.length === 0 ? (
-                                      <p className="text-xs text-slate-500">No detailed events logged yet.</p>
-                                    ) : (
-                                      <ul className="space-y-3 border-l-2 border-vault-700 ml-2 pl-4 max-h-64 overflow-y-auto">
-                                        {s.events.map((ev) => (
-                                          <li key={ev.event_id} className="relative">
-                                            <div className={`absolute -left-[21px] top-1.5 h-2 w-2 rounded-full ${ev.stage === "micro_interaction" ? "bg-slate-600" : "bg-accent-indigo"}`}></div>
-                                            <p className={`text-xs font-mono ${ev.stage === "micro_interaction" ? "text-slate-500" : "text-slate-400"}`}>
-                                              {ev.occurred_at ? new Date(ev.occurred_at).toLocaleTimeString() : "—"} —
-                                              <span className="font-semibold ml-1">{ev.stage === "micro_interaction" ? "Click Event" : ev.stage}</span>
-                                            </p>
-                                            <p className={`text-xs mt-0.5 ${ev.stage === "micro_interaction" ? "text-slate-400" : "text-slate-200 text-sm"}`}>
-                                              {ev.detail}
-                                            </p>
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      )}
                     </React.Fragment>
                   );
                 })

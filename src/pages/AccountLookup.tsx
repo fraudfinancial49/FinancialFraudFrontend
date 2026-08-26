@@ -122,10 +122,13 @@ export const AccountLookup: React.FC = () => {
         setData({ ...data, is_blocked: res.is_blocked });
         setBlockReason("");
       }
-      setConfirmAction(null);
     } catch (e: any) {
       setActionError(e?.response?.data?.detail ?? `Failed to ${confirmAction} account.`);
     } finally {
+      // Always close, success or failure -- on failure this surfaces the
+      // actionError banner underneath, which the dialog's overlay would
+      // otherwise hide, making a real failure look like a silent no-op.
+      setConfirmAction(null);
       setActionBusy(false);
     }
   }
