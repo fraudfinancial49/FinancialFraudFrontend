@@ -12,6 +12,7 @@ import SafeVault from "@/pages/SafeVault";
 import AccountLookup from "@/pages/AccountLookup";
 import AttackerProfiles from "@/pages/AttackerProfiles";
 import ModelPerformance from "@/pages/ModelPerformance";
+import XAIExplorer from "@/pages/XAIExplorer";
 import AdminFeedbackQueue from "@/pages/AdminFeedbackQueue";
  
 const App: React.FC = () => {
@@ -50,6 +51,7 @@ const App: React.FC = () => {
   }
 />
                 <Route path="/model-performance" element={<ModelPerformance />} />
+                <Route path="/xai-explorer" element={<XAIExplorer />} />
                 <Route
                   path="/feedback-queue"
                   element={

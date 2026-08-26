@@ -151,6 +151,23 @@ export async function explainTransaction(transactionId: string) {
   return data;
 }
 
+export interface XAINarrativeResponse {
+  transaction_id: string;
+  narrative: string;
+  model_used: string;
+}
+
+export async function explainTransactionNarrative(
+  transactionId: string,
+  payload: { final_risk_score: number; routing_decision: string; contributions: Record<string, number> }
+) {
+  const { data } = await apiClient.post<XAINarrativeResponse>(
+    `/api/v1/transactions/${transactionId}/explain-narrative`,
+    payload
+  );
+  return data;
+}
+
 // --- Part 5: Honeypot Event Telemetry ---
 export async function getHoneypotEvents(sessionId: string) {
   const { data } = await apiClient.get(`/api/v1/honeypot/${sessionId}/events`);

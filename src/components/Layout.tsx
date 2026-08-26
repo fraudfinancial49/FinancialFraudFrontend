@@ -6,6 +6,7 @@ import {
   ShieldCheck,
   Bug,
   BrainCircuit,
+  Sparkles,
   ListChecks,
   LogOut,
   FlaskConical,
@@ -20,7 +21,8 @@ const NAV_ITEMS = [
   { to: "/safe-vault", label: "Safe Vault", icon: ShieldCheck, adminOnly: false },
   { to: "/attacker-profiles", label: "Threat Intelligence", icon: Bug, adminOnly: true },
   { to: "/account-lookup", label: "Account Lookup", icon: UserSearch, adminOnly: true },
-  { to: "/model-performance", label: "Model & XAI", icon: BrainCircuit, adminOnly: false },
+  { to: "/model-performance", label: "Model Performance", icon: BrainCircuit, adminOnly: false },
+  { to: "/xai-explorer", label: "XAI Explorer", icon: Sparkles, adminOnly: false },
   { to: "/feedback-queue", label: "Feedback Queue", icon: ListChecks, adminOnly: true },
 ];
 

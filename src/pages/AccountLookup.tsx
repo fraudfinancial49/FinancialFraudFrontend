@@ -1,12 +1,61 @@
 import React, { useState } from "react";
 import { Search, ShieldOff, ShieldCheck as ShieldCheckIcon, Loader2 } from "lucide-react";
 import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+import {
   getAccountTransactions,
   blockAccount,
   unblockAccount,
   explainTransaction,
 } from "@/api/client";
+import { RoutingBadge } from "@/components/RiskBadges";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { AccountTransactionOut, AccountTransactionsResponse } from "@/types/api";
+
+const STATUS_STYLES: Record<string, string> = {
+  approved: "bg-risk-low/15 text-risk-low",
+  pending_otp: "bg-risk-moderate/15 text-risk-moderate",
+  otp_verified: "bg-accent-teal/15 text-accent-teal",
+  released: "bg-risk-low/15 text-risk-low",
+  cancelled: "bg-risk-high/15 text-risk-high",
+  auto_rejected: "bg-risk-critical/15 text-risk-critical",
+  flagged_honeypot: "bg-risk-critical/15 text-risk-critical",
+  blocked: "bg-risk-critical/15 text-risk-critical",
+  pending: "bg-vault-800 text-slate-400",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  approved: "Approved",
+  pending_otp: "Pending OTP",
+  otp_verified: "OTP Verified",
+  released: "Admin Released",
+  cancelled: "Cancelled",
+  auto_rejected: "Auto-Rejected",
+  flagged_honeypot: "Honeypot",
+  blocked: "Blocked",
+  pending: "Pending",
+};
+
+function StatusBadge({ status }: { status: string | null | undefined }) {
+  const key = status || "unknown";
+  return (
+    <span className={`badge inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[key] || "bg-vault-800 text-slate-400"}`}>
+      {STATUS_LABELS[key] || (status ? status : "Unknown")}
+    </span>
+  );
+}
+
+interface ShapContribution {
+  feature: string;
+  impact: number;
+}
 
 export const AccountLookup: React.FC = () => {
   const [accountId, setAccountId] = useState("");
@@ -14,19 +63,22 @@ export const AccountLookup: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedTx, setSelectedTx] = useState<AccountTransactionOut | null>(null);
-  const [shap, setShap] = useState<any>(null);
+  const [shapData, setShapData] = useState<ShapContribution[] | null>(null);
+  const [shapError, setShapError] = useState<string | null>(null);
   const [shapLoading, setShapLoading] = useState(false);
   const [blockReason, setBlockReason] = useState("");
   const [unblockReason, setUnblockReason] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<null | "block" | "unblock">(null);
 
   async function runSearch() {
     if (!accountId.trim()) return;
     setLoading(true);
     setError(null);
     setSelectedTx(null);
-    setShap(null);
+    setShapData(null);
+    setShapError(null);
     try {
       const res = await getAccountTransactions(accountId.trim());
       setData(res);
@@ -38,55 +90,61 @@ export const AccountLookup: React.FC = () => {
     }
   }
 
-  async function toggleBlock() {
+  function requestToggleBlock() {
     if (!data) return;
     setActionError(null);
     if (data.is_blocked) {
-      const reason = unblockReason.trim();
-      if (!reason) {
+      if (!unblockReason.trim()) {
         setActionError("A justification is required to unblock this account.");
         return;
       }
-      if (!window.confirm(`Unblock account ${data.account_id}? This will be logged.`)) return;
-      setActionBusy(true);
-      try {
-        const res = await unblockAccount(data.account_id, reason);
-        setData({ ...data, is_blocked: res.is_blocked });
-        setUnblockReason("");
-      } catch (e: any) {
-        setActionError(e?.response?.data?.detail ?? "Failed to unblock account.");
-      } finally {
-        setActionBusy(false);
-      }
+      setConfirmAction("unblock");
     } else {
-      const reason = blockReason.trim();
-      if (!reason) {
+      if (!blockReason.trim()) {
         setActionError("A justification is required to block this account.");
         return;
       }
-      if (!window.confirm(`Block account ${data.account_id}? This will be logged.`)) return;
-      setActionBusy(true);
-      try {
-        const res = await blockAccount(data.account_id, reason);
+      setConfirmAction("block");
+    }
+  }
+
+  async function confirmToggleBlock() {
+    if (!data || !confirmAction) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      if (confirmAction === "unblock") {
+        const res = await unblockAccount(data.account_id, unblockReason.trim());
+        setData({ ...data, is_blocked: res.is_blocked });
+        setUnblockReason("");
+      } else {
+        const res = await blockAccount(data.account_id, blockReason.trim());
         setData({ ...data, is_blocked: res.is_blocked });
         setBlockReason("");
-      } catch (e: any) {
-        setActionError(e?.response?.data?.detail ?? "Failed to block account.");
-      } finally {
-        setActionBusy(false);
       }
+      setConfirmAction(null);
+    } catch (e: any) {
+      setActionError(e?.response?.data?.detail ?? `Failed to ${confirmAction} account.`);
+    } finally {
+      setActionBusy(false);
     }
   }
 
   async function openShap(tx: AccountTransactionOut) {
     setSelectedTx(tx);
-    setShap(null);
+    setShapData(null);
+    setShapError(null);
     setShapLoading(true);
     try {
       const res = await explainTransaction(tx.transaction_id);
-      setShap(res);
+      const contributions: Record<string, number> = res?.contributions || {};
+      const rows = Object.entries(contributions)
+        .map(([feature, impact]) => ({ feature, impact: Number(impact) }))
+        .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+        .slice(0, 8);
+      setShapData(rows);
     } catch {
-      setShap({ error: "SHAP unavailable for this transaction." });
+      setShapError("SHAP explanation unavailable for this transaction.");
     } finally {
       setShapLoading(false);
     }
@@ -129,7 +187,7 @@ export const AccountLookup: React.FC = () => {
                 className="rounded-lg border border-vault-700 bg-vault-950 px-2 py-1 text-sm text-slate-100"
               />
               <button
-                onClick={toggleBlock}
+                onClick={requestToggleBlock}
                 disabled={actionBusy || (data.is_blocked ? !unblockReason.trim() : !blockReason.trim())}
                 className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                   data.is_blocked ? "bg-emerald-600 text-white" : "bg-red-600 text-white"
@@ -156,6 +214,7 @@ export const AccountLookup: React.FC = () => {
                 <th>Type</th>
                 <th>Amount</th>
                 <th>Routing</th>
+                <th>Status</th>
                 <th>Risk</th>
               </tr>
             </thead>
@@ -171,7 +230,8 @@ export const AccountLookup: React.FC = () => {
                   <td className="py-2">{new Date(tx.timestamp).toLocaleString()}</td>
                   <td>{tx.type}</td>
                   <td>{tx.amount.toLocaleString()}</td>
-                  <td>{tx.routing_decision ?? "—"}</td>
+                  <td>{tx.routing_decision ? <RoutingBadge decision={tx.routing_decision} /> : "—"}</td>
+                  <td><StatusBadge status={tx.status} /></td>
                   <td>{tx.final_risk_score?.toFixed(1) ?? "—"}</td>
                 </tr>
               ))}
@@ -180,20 +240,52 @@ export const AccountLookup: React.FC = () => {
 
           {selectedTx && (
             <div className="rounded-lg border border-vault-700 bg-vault-900 p-4">
-              <p className="mb-2 font-medium text-slate-200">
-                SHAP — transaction {selectedTx.transaction_id.slice(0, 8)}…
-              </p>
-              {shapLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-              ) : (
-                <pre className="max-h-64 overflow-auto text-xs text-slate-400">
-                  {JSON.stringify(shap, null, 2)}
-                </pre>
-              )}
+              <div className="mb-2 flex items-center justify-between">
+                <p className="font-medium text-slate-200">
+                  SHAP Feature Influence — transaction {selectedTx.transaction_id.slice(0, 8)}…
+                </p>
+                <StatusBadge status={selectedTx.status} />
+              </div>
+              <div className="h-72">
+                {shapLoading ? (
+                  <div className="flex h-full items-center justify-center">
+                    <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+                  </div>
+                ) : shapError ? (
+                  <div className="flex h-full items-center justify-center text-xs text-slate-500">{shapError}</div>
+                ) : shapData && shapData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={shapData} layout="vertical" margin={{ left: 30, right: 16, top: 8, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" />
+                      <XAxis type="number" stroke="#64748b" fontSize={10} />
+                      <YAxis type="category" dataKey="feature" stroke="#64748b" fontSize={10} width={110} />
+                      <Tooltip contentStyle={{ background: "#0e1424", border: "1px solid #1c2540", fontSize: "12px" }} />
+                      <Bar dataKey="impact" fill="#12b3a8" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-xs text-slate-500">No SHAP data available.</div>
+                )}
+              </div>
             </div>
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmAction !== null}
+        variant="danger"
+        title={confirmAction === "unblock" ? "Unblock this account?" : "Block this account?"}
+        message={
+          data
+            ? `${confirmAction === "unblock" ? "Unblock" : "Block"} account ${data.account_id}? This action will be logged to the audit trail.`
+            : ""
+        }
+        confirmLabel={confirmAction === "unblock" ? "Unblock Account" : "Block Account"}
+        busy={actionBusy}
+        onConfirm={confirmToggleBlock}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 };

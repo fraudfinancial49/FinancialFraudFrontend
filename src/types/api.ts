@@ -223,6 +223,17 @@ export interface ProfilingRunRecord {
   result: AttackerProfilingResult;
 }
  
+export type AccountTransactionStatus =
+  | "approved"
+  | "pending_otp"
+  | "otp_verified"
+  | "released"
+  | "cancelled"
+  | "auto_rejected"
+  | "flagged_honeypot"
+  | "blocked"
+  | "pending";
+
 export interface AccountTransactionOut {
   transaction_id: string;
   name_orig: string;
@@ -232,6 +243,7 @@ export interface AccountTransactionOut {
   routing_decision: RoutingDecision | "auto_reject" | null;
   final_risk_score: number | null;
   timestamp: string;
+  status: AccountTransactionStatus | string;
 }
 
 export interface AccountTransactionsResponse {
