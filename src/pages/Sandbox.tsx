@@ -290,13 +290,46 @@ export const Sandbox: React.FC = () => {
                   <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">1. Ensemble Weights</h2></div>
                   <div className="h-[280px] p-2">
                     <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={fusionWeightsData} dataKey="weight" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2}>
-                          {fusionWeightsData.map((e, i) => <Cell key={i} fill={["#5b6df8", "#12b3a8", "#f5b942", "#f2545b", "#9b51e0", "#ff8a65", "#4CAF50", "#FF9800", "#9E9E9E"][i % 9]} />)}
-                        </Pie>
-                        <Tooltip contentStyle={{ background: "#0e1424", border: "1px solid #1c2540", fontSize: "12px" }} formatter={(value: number) => `${value.toFixed(1)}%`} />
-                        <Legend wrapperStyle={{ fontSize: "11px" }} />
-                      </PieChart>
+<PieChart>
+  <Pie
+    data={fusionWeightsData}
+    dataKey="weight"
+    nameKey="name"
+    innerRadius={40}
+    outerRadius={70}
+    paddingAngle={2}
+  >
+    {fusionWeightsData.map((e, i) => (
+      <Cell
+        key={i}
+        fill={[
+          "#5b6df8",
+          "#12b3a8",
+          "#f5b942",
+          "#f2545b",
+          "#9b51e0",
+          "#ff8a65",
+          "#4CAF50",
+          "#FF9800",
+          "#9E9E9E",
+        ][i % 9]}
+      />
+    ))}
+  </Pie>
+
+  <Tooltip
+    contentStyle={{
+      backgroundColor: "#0e1424",
+      border: "1px solid #1c2540",
+      color: "#ffffff",
+    }}
+    labelStyle={{ color: "#ffffff" }}
+    itemStyle={{ color: "#ffffff" }}
+    formatter={(value: number) => `${value.toFixed(1)}%`}
+  />
+
+  <Legend wrapperStyle={{ fontSize: "11px" }} />
+</PieChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
