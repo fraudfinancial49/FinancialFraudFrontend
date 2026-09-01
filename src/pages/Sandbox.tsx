@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Gauge, Timer, Send, Loader2, AlertCircle, FlaskConical } from "lucide-react";
+import { Gauge, Timer, Send, Loader2, AlertCircle, FlaskConical, Sparkles } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -13,7 +13,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import apiClient, { explainTransaction } from "@/api/client";
+import apiClient, { explainTransaction, explainTransactionNarrative } from "@/api/client";
 import { useActivity } from "@/store/ActivityContext";
 import { RiskScoreBadge, RoutingBadge } from "@/components/RiskBadges";
 import type {
@@ -21,6 +21,8 @@ import type {
   TransactionAssessResponse,
   TransactionType,
 } from "@/types/api";
+
+type XAITab = "weights" | "shap" | "explanation";
 
 const TX_TYPES: TransactionType[] = ["CASH_IN", "CASH_OUT", "DEBIT", "PAYMENT", "TRANSFER"];
 
@@ -48,6 +50,13 @@ export const Sandbox: React.FC = () => {
   
   const [shapData, setShapData] = useState<any[] | null>(null);
   const [shapLoading, setShapLoading] = useState(false);
+
+  // AI Explanation state (same Hugging Face model as XAI Explorer)
+  const [narrative, setNarrative] = useState<string | null>(null);
+  const [narrativeLoading, setNarrativeLoading] = useState(false);
+  const [narrativeError, setNarrativeError] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState<XAITab>("weights");
 
   const kpis = useMemo(() => {
     const total = transactions.length;
@@ -80,6 +89,8 @@ export const Sandbox: React.FC = () => {
     setSubmitting(true);
     setAssessError(null);
     setShapData(null);
+    setNarrative(null);
+    setNarrativeError(null);
     
     try {
       const payload: TransactionAssessRequest = {
@@ -113,6 +124,37 @@ export const Sandbox: React.FC = () => {
       setSubmitting(false);
     }
   };
+
+  async function generateNarrative() {
+    if (!lastResult || !shapData) return;
+    setNarrativeLoading(true);
+    setNarrativeError(null);
+    setNarrative(null);
+    try {
+      const contributions: Record<string, number> = {};
+      shapData.forEach((row) => {
+        contributions[row.feature] = row.impact;
+      });
+      const res = await explainTransactionNarrative(lastResult.transaction_id, {
+        final_risk_score: lastResult.final_risk_score,
+        routing_decision: lastResult.routing_decision,
+        contributions,
+      });
+      setNarrative(res.narrative);
+    } catch (err: any) {
+      setNarrativeError(
+        err?.response?.data?.detail || "AI explanation is temporarily unavailable — the visual SHAP chart above is unaffected."
+      );
+    } finally {
+      setNarrativeLoading(false);
+    }
+  }
+
+  const tabs: { id: XAITab; label: string }[] = [
+    { id: "weights",     label: "1. Ensemble Weights" },
+    { id: "shap",        label: "2. SHAP Feature Influence" },
+    { id: "explanation", label: "3. AI Explanation" },
+  ];
 
   return (
     <div className="space-y-6">
@@ -233,23 +275,41 @@ export const Sandbox: React.FC = () => {
           </form>
         </div>
 
-        {/* XAI Defense Panels */}
-        <div className="space-y-6 lg:col-span-3">
+        {/* XAI Defense Panels — Tabbed */}
+        <div className="lg:col-span-3">
           {lastResult ? (
-            <div className="grid grid-cols-1 gap-6">
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                {/* 1. Ensemble Weights */}
-                <div className="panel flex flex-col">
-                  <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">1. Ensemble Weights</h2></div>
-                  <div className="h-[280px] p-2">
+            <div className="panel flex flex-col">
+              {/* Tab bar */}
+              <div className="flex border-b border-vault-700/60">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`px-4 py-2.5 text-xs font-medium transition-colors ${
+                      activeTab === tab.id
+                        ? "border-b-2 border-accent-indigo text-accent-indigo"
+                        : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Tab content */}
+              <div className="flex-1 p-4">
+
+                {/* Tab 1: Ensemble Weights */}
+                {activeTab === "weights" && (
+                  <div className="h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
                           data={fusionWeightsData}
                           dataKey="weight"
                           nameKey="name"
-                          innerRadius={40}
-                          outerRadius={70}
+                          innerRadius={50}
+                          outerRadius={85}
                           paddingAngle={2}
                         >
                           {fusionWeightsData.map((e, i) => (
@@ -283,14 +343,15 @@ export const Sandbox: React.FC = () => {
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
-                </div>
+                )}
 
-                {/* 3. SHAP Feature Influence */}
-                <div className="panel flex flex-col">
-                  <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">2. SHAP Feature Influence</h2></div>
-                  <div className="h-[280px] p-2">
+                {/* Tab 2: SHAP Feature Influence */}
+                {activeTab === "shap" && (
+                  <div className="h-[300px]">
                     {shapLoading ? (
-                      <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-500" /></div>
+                      <div className="flex h-full items-center justify-center">
+                        <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+                      </div>
                     ) : shapData ? (
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={shapData} layout="vertical" margin={{ left: 30, right: 10 }}>
@@ -305,7 +366,70 @@ export const Sandbox: React.FC = () => {
                       <div className="flex h-full items-center justify-center text-xs text-slate-500">Failed to load SHAP</div>
                     )}
                   </div>
-                </div>
+                )}
+
+                {/* Tab 3: AI-Generated Explanation (same Hugging Face model as XAI Explorer) */}
+                {activeTab === "explanation" && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
+                        <Sparkles className="h-4 w-4 text-accent-indigo" />
+                        AI-Generated Plain-English Explanation
+                      </div>
+                      {shapData && (
+                        <button
+                          onClick={generateNarrative}
+                          disabled={narrativeLoading}
+                          className="btn-secondary py-1 px-2 text-xs"
+                        >
+                          {narrativeLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                          {narrative ? "Regenerate" : "Generate Explanation"}
+                        </button>
+                      )}
+                    </div>
+
+                    {!shapData && !shapLoading && (
+                      <div className="flex h-48 items-center justify-center text-sm text-slate-500">
+                        SHAP data is required before a narrative can be generated. Submit a transaction first.
+                      </div>
+                    )}
+
+                    {shapLoading && (
+                      <div className="flex h-48 items-center justify-center gap-2 text-sm text-slate-500">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Waiting for SHAP breakdown…
+                      </div>
+                    )}
+
+                    {shapData && !narrative && !narrativeLoading && !narrativeError && (
+                      <div className="flex h-48 flex-col items-center justify-center gap-2 text-center text-sm text-slate-500">
+                        <Sparkles className="h-5 w-5" />
+                        Click "Generate Explanation" for a plain-English summary of the SHAP result.
+                      </div>
+                    )}
+
+                    {narrativeLoading && (
+                      <div className="flex h-48 items-center justify-center gap-2 text-sm text-slate-500">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Asking the language model…
+                      </div>
+                    )}
+
+                    {narrativeError && !narrativeLoading && (
+                      <div className="flex items-start gap-2 rounded-lg border border-risk-moderate/40 bg-risk-moderate/10 px-3 py-2 text-sm text-risk-moderate">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>{narrativeError}</span>
+                      </div>
+                    )}
+
+                    {narrative && !narrativeLoading && (
+                      <div className="rounded-lg border border-vault-700 bg-vault-850 p-4 text-sm leading-relaxed text-slate-300">
+                        {narrative}
+                      </div>
+                    )}
+                  </div>
+                )}
+
               </div>
             </div>
           ) : (
