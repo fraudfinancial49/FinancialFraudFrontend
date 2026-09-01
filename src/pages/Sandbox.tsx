@@ -22,14 +22,6 @@ import type {
   TransactionType,
 } from "@/types/api";
 
-// ---------------------------------------------------------------------------
-// Manual testing / demo tool. Nothing submitted here reflects real bank
-// traffic — it exists so an analyst or developer can hand-build a single
-// transaction and see exactly how the pipeline scores and routes it. Results
-// shown on this page are session-local only (see ActivityContext) and are
-// intentionally separate from the bank-wide Overview dashboard.
-// ---------------------------------------------------------------------------
-
 const TX_TYPES: TransactionType[] = ["CASH_IN", "CASH_OUT", "DEBIT", "PAYMENT", "TRANSFER"];
 
 const DEFAULT_FORM: TransactionAssessRequest = {
@@ -47,13 +39,6 @@ const DEFAULT_FORM: TransactionAssessRequest = {
   browser_fingerprint: "",
 };
 
-const ROUTING_COLORS: Record<string, string> = {
-  approve: "#2fd97f",
-  otp_verification: "#f5b942",
-  auto_reject: "#c0203a",
-  honeypot: "#f2545b",
-};
-
 export const Sandbox: React.FC = () => {
   const { transactions, recordAssessment } = useActivity();
   const [form, setForm] = useState<TransactionAssessRequest>(DEFAULT_FORM);
@@ -61,7 +46,6 @@ export const Sandbox: React.FC = () => {
   const [assessError, setAssessError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<TransactionAssessResponse | null>(null);
   
-  // --- XAI State for Professor Demo ---
   const [shapData, setShapData] = useState<any[] | null>(null);
   const [shapLoading, setShapLoading] = useState(false);
 
@@ -75,25 +59,13 @@ export const Sandbox: React.FC = () => {
     return { total, totalVolume, avgLatency, avgRisk };
   }, [transactions]);
 
-  const routingBreakdown = useMemo(() => {
-    const counts: Record<string, number> = { approve: 0, otp_verification: 0, honeypot: 0, auto_reject: 0 };
-    transactions.forEach((t) => {
-      counts[t.routing_decision] = (counts[t.routing_decision] ?? 0) + 1;
-    });
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [transactions]);
-
-  const riskTimeline = useMemo(
-    () =>
-      transactions
-        .slice(0, 12)
-        .reverse()
-        .map((t, idx) => ({
-          index: idx + 1,
-          risk: Number(t.final_risk_score.toFixed(2)),
-        })),
-    [transactions]
-  );
+  const fusionWeightsData = useMemo(() => {
+    if (!lastResult?.fusion_weights) return [];
+    return Object.entries(lastResult.fusion_weights).map(([name, weight]) => ({
+      name: name.replace(/_/g, " "),
+      weight: weight * 100,
+    }));
+  }, [lastResult]);
 
   const handleChange = (
     field: keyof TransactionAssessRequest
@@ -119,7 +91,6 @@ export const Sandbox: React.FC = () => {
       setLastResult(response.data);
       recordAssessment(payload, response.data);
 
-      // Automatically fetch SHAP explanation for the UI
       setShapLoading(true);
       try {
         const shapRes = await explainTransaction(response.data.transaction_id);
@@ -128,7 +99,7 @@ export const Sandbox: React.FC = () => {
         const rows = Object.entries(rawFeatures)
           .map(([feature, impact]) => ({ feature, impact: Number(impact) }))
           .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
-          .slice(0, 8); // Show top 8 features
+          .slice(0, 8);
         setShapData(rows);
       } catch (err) {
         console.error("SHAP explanation failed", err);
@@ -142,30 +113,6 @@ export const Sandbox: React.FC = () => {
       setSubmitting(false);
     }
   };
-
-// --- Individual Model Scores data ---
-// Temporarily disabled along with Separate Model Predictions chart
-
-/*
-const individualScoresData = useMemo(() => {
-  if (!lastResult?.individual_scores) return [];
-
-  return Object.entries(lastResult.individual_scores).map(
-    ([name, score]) => ({
-      name: name.replace(/_/g, " "),
-      score: score * 100, // Convert probability to 0-100 scale
-    })
-  );
-}, [lastResult]);
-*/
-
-  const fusionWeightsData = useMemo(() => {
-    if (!lastResult?.fusion_weights) return [];
-    return Object.entries(lastResult.fusion_weights).map(([name, weight]) => ({
-      name: name.replace(/_/g, " "),
-      weight: weight * 100, // Convert to percentage
-    }));
-  }, [lastResult]);
 
   return (
     <div className="space-y-6">
@@ -290,128 +237,74 @@ const individualScoresData = useMemo(() => {
         <div className="space-y-6 lg:col-span-3">
           {lastResult ? (
             <div className="grid grid-cols-1 gap-6">
-              
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 {/* 1. Ensemble Weights */}
                 <div className="panel flex flex-col">
                   <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">1. Ensemble Weights</h2></div>
                   <div className="h-[280px] p-2">
                     <ResponsiveContainer width="100%" height="100%">
-<PieChart>
-  <Pie
-    data={fusionWeightsData}
-    dataKey="weight"
-    nameKey="name"
-    innerRadius={40}
-    outerRadius={70}
-    paddingAngle={2}
-  >
-    {fusionWeightsData.map((e, i) => (
-      <Cell
-        key={i}
-        fill={[
-          "#5b6df8",
-          "#12b3a8",
-          "#f5b942",
-          "#f2545b",
-          "#9b51e0",
-          "#ff8a65",
-          "#4CAF50",
-          "#FF9800",
-          "#9E9E9E",
-        ][i % 9]}
-      />
-    ))}
-  </Pie>
-
-  <Tooltip
-    contentStyle={{
-      backgroundColor: "#0e1424",
-      border: "1px solid #1c2540",
-      color: "#ffffff",
-    }}
-    labelStyle={{ color: "#ffffff" }}
-    itemStyle={{ color: "#ffffff" }}
-    formatter={(value: number) => `${value.toFixed(1)}%`}
-  />
-
-  <Legend wrapperStyle={{ fontSize: "11px" }} />
-</PieChart>
+                      <PieChart>
+                        <Pie
+                          data={fusionWeightsData}
+                          dataKey="weight"
+                          nameKey="name"
+                          innerRadius={40}
+                          outerRadius={70}
+                          paddingAngle={2}
+                        >
+                          {fusionWeightsData.map((e, i) => (
+                            <Cell
+                              key={i}
+                              fill={[
+                                "#5b6df8",
+                                "#12b3a8",
+                                "#f5b942",
+                                "#f2545b",
+                                "#9b51e0",
+                                "#ff8a65",
+                                "#4CAF50",
+                                "#FF9800",
+                                "#9E9E9E",
+                              ][i % 9]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#0e1424",
+                            border: "1px solid #1c2540",
+                            color: "#ffffff",
+                          }}
+                          labelStyle={{ color: "#ffffff" }}
+                          itemStyle={{ color: "#ffffff" }}
+                          formatter={(value: number) => `${value.toFixed(1)}%`}
+                        />
+                        <Legend wrapperStyle={{ fontSize: "11px" }} />
+                      </PieChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
 
-{/* 
-  ============================================================
-  2. SEPARATE MODEL PREDICTIONS — TEMPORARILY DISABLED
-  ============================================================
-
-  <div className="panel flex flex-col">
-    <div className="panel-header">
-      <h2 className="text-sm font-semibold text-slate-200">
-        2. Separate Model Predictions
-      </h2>
-    </div>
-
-    <div className="h-[280px] p-2">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={individualScoresData}
-          layout="vertical"
-          margin={{ left: 25, right: 10 }}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" />
-          <XAxis
-            type="number"
-            domain={[0, 100]}
-            stroke="#64748b"
-            fontSize={10}
-          />
-          <YAxis
-            type="category"
-            dataKey="name"
-            stroke="#64748b"
-            fontSize={10}
-            width={70}
-          />
-          <Tooltip
-            contentStyle={{
-              background: "#0e1424",
-              border: "1px solid #1c2540",
-              fontSize: "12px",
-            }}
-            formatter={(value: number) => value.toFixed(1)}
-          />
-          <Bar
-            dataKey="score"
-            fill="#5b6df8"
-            radius={[0, 4, 4, 0]}
-          />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  </div>
-*/}
-
-              {/* 3. SHAP Feature Influence */}
-              <div className="panel flex flex-col">
-                <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">3. SHAP Feature Influence</h2></div>
-                <div className="h-[280px] p-2">
-                  {shapLoading ? (
-                     <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-500" /></div>
-                  ) : shapData ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={shapData} layout="vertical" margin={{ left: 30, right: 10 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" />
-                        <XAxis type="number" stroke="#64748b" fontSize={10} />
-                        <YAxis type="category" dataKey="feature" stroke="#64748b" fontSize={10} width={80} />
-                        <Tooltip contentStyle={{ background: "#0e1424", border: "1px solid #1c2540", fontSize: "12px" }} />
-                        <Bar dataKey="impact" fill="#12b3a8" radius={[0, 4, 4, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                     <div className="flex h-full items-center justify-center text-xs text-slate-500">Failed to load SHAP</div>
-                  )}
+                {/* 3. SHAP Feature Influence */}
+                <div className="panel flex flex-col">
+                  <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">3. SHAP Feature Influence</h2></div>
+                  <div className="h-[280px] p-2">
+                    {shapLoading ? (
+                      <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-500" /></div>
+                    ) : shapData ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={shapData} layout="vertical" margin={{ left: 30, right: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" />
+                          <XAxis type="number" stroke="#64748b" fontSize={10} />
+                          <YAxis type="category" dataKey="feature" stroke="#64748b" fontSize={10} width={80} />
+                          <Tooltip contentStyle={{ background: "#0e1424", border: "1px solid #1c2540", fontSize: "12px" }} />
+                          <Bar dataKey="impact" fill="#12b3a8" radius={[0, 4, 4, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-xs text-slate-500">Failed to load SHAP</div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
