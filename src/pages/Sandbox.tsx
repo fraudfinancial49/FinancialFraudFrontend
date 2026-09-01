@@ -143,14 +143,21 @@ export const Sandbox: React.FC = () => {
     }
   };
 
-  // --- Process data for Recharts ---
-  const individualScoresData = useMemo(() => {
-    if (!lastResult?.individual_scores) return [];
-    return Object.entries(lastResult.individual_scores).map(([name, score]) => ({
+// --- Individual Model Scores data ---
+// Temporarily disabled along with Separate Model Predictions chart
+
+/*
+const individualScoresData = useMemo(() => {
+  if (!lastResult?.individual_scores) return [];
+
+  return Object.entries(lastResult.individual_scores).map(
+    ([name, score]) => ({
       name: name.replace(/_/g, " "),
       score: score * 100, // Convert probability to 0-100 scale
-    }));
-  }, [lastResult]);
+    })
+  );
+}, [lastResult]);
+*/
 
   const fusionWeightsData = useMemo(() => {
     if (!lastResult?.fusion_weights) return [];
@@ -334,22 +341,57 @@ export const Sandbox: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 2. Individual Model Scores */}
-                <div className="panel flex flex-col">
-                  <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">2. Separate Model Predictions</h2></div>
-                  <div className="h-[280px] p-2">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={individualScoresData} layout="vertical" margin={{ left: 25, right: 10 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" />
-                        <XAxis type="number" domain={[0, 100]} stroke="#64748b" fontSize={10} />
-                        <YAxis type="category" dataKey="name" stroke="#64748b" fontSize={10} width={70} />
-                        <Tooltip contentStyle={{ background: "#0e1424", border: "1px solid #1c2540", fontSize: "12px" }} formatter={(value: number) => value.toFixed(1)} />
-                        <Bar dataKey="score" fill="#5b6df8" radius={[0, 4, 4, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </div>
+{/* 
+  ============================================================
+  2. SEPARATE MODEL PREDICTIONS — TEMPORARILY DISABLED
+  ============================================================
+
+  <div className="panel flex flex-col">
+    <div className="panel-header">
+      <h2 className="text-sm font-semibold text-slate-200">
+        2. Separate Model Predictions
+      </h2>
+    </div>
+
+    <div className="h-[280px] p-2">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          data={individualScoresData}
+          layout="vertical"
+          margin={{ left: 25, right: 10 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" />
+          <XAxis
+            type="number"
+            domain={[0, 100]}
+            stroke="#64748b"
+            fontSize={10}
+          />
+          <YAxis
+            type="category"
+            dataKey="name"
+            stroke="#64748b"
+            fontSize={10}
+            width={70}
+          />
+          <Tooltip
+            contentStyle={{
+              background: "#0e1424",
+              border: "1px solid #1c2540",
+              fontSize: "12px",
+            }}
+            formatter={(value: number) => value.toFixed(1)}
+          />
+          <Bar
+            dataKey="score"
+            fill="#5b6df8"
+            radius={[0, 4, 4, 0]}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  </div>
+*/}
 
               {/* 3. SHAP Feature Influence */}
               <div className="panel flex flex-col">
