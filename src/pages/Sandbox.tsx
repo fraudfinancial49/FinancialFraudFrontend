@@ -287,7 +287,7 @@ export const Sandbox: React.FC = () => {
 
                 {/* 3. SHAP Feature Influence */}
                 <div className="panel flex flex-col">
-                  <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">3. SHAP Feature Influence</h2></div>
+                  <div className="panel-header"><h2 className="text-sm font-semibold text-slate-200">2. SHAP Feature Influence</h2></div>
                   <div className="h-[280px] p-2">
                     {shapLoading ? (
                       <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-500" /></div>
