@@ -91,7 +91,9 @@ export const AdminFeedbackQueue: React.FC = () => {
           <h1 className="text-xl font-bold text-slate-50">Admin Feedback Queue</h1>
           <p className="text-sm text-slate-500">
             Confirm analyst-reviewed outcomes, then trigger a full model pipeline retrain once enough
-            fresh labels have accumulated.
+            fresh labels have accumulated. Every retrain also exports accumulated transactions (raw
+            fields, behavioral/graph/trust metadata, and confirmed outcomes) to the Hugging Face
+            dataset used for future retraining.
           </p>
         </div>
         <button onClick={handleRetrain} disabled={retraining} className="btn-primary shrink-0">

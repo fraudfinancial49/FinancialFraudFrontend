@@ -140,6 +140,8 @@ export interface RetrainTriggerResponse {
   status: string;
   message?: string;
   job_id?: string;
+  hf_export_count?: number;
+  hf_dataset_repo?: string | null;
 }
  
 export type TransactionSource = "system_auto" | "manual_sandbox";
