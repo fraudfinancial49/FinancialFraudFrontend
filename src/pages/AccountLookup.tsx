@@ -140,10 +140,66 @@ function AnomalyTooltip({ active, payload }: { active?: boolean; payload?: Array
   );
 }
 
+// Y-axis tick for the chart's account labels -- hovering shows a native
+// browser tooltip with the full account ID (via <title>) and a color change
+// as a click affordance; clicking copies the FULL id (not the truncated
+// label) to the clipboard, with a brief green flash for confirmation. Uses
+// Recharts' `index` (the row's position within the chart's data array,
+// which Recharts always passes to a custom tick) to look up the full row --
+// avoids any ambiguity from two different account IDs truncating to the same
+// visible label.
+function CopyableYAxisTick(props: {
+  x?: number;
+  y?: number;
+  payload?: { value: string };
+  index?: number;
+  chartData: AnomalyChartRow[];
+  onCopied: (id: string) => void;
+}) {
+  const { x = 0, y = 0, payload, index, chartData, onCopied } = props;
+  const [hovering, setHovering] = useState(false);
+  const [justCopied, setJustCopied] = useState(false);
+  const row = index !== undefined ? chartData[index] : undefined;
+  const fullId = row?.account_id ?? payload?.value ?? "";
+
+  function handleClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!fullId) return;
+    navigator.clipboard.writeText(fullId).then(() => {
+      setJustCopied(true);
+      onCopied(fullId);
+      window.setTimeout(() => setJustCopied(false), 1200);
+    });
+  }
+
+  const fillColor = justCopied ? "#2fd97f" : hovering ? "#5b6df8" : "#64748b";
+
+  return (
+    <g
+      transform={`translate(${x},${y})`}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      onClick={handleClick}
+      style={{ cursor: fullId ? "pointer" : "default" }}
+    >
+      <title>{fullId ? (justCopied ? "Copied!" : `Click to copy ${fullId}`) : ""}</title>
+      <text x={0} y={0} dy={4} textAnchor="end" fontSize={10} fill={fillColor}>
+        {payload?.value}
+      </text>
+    </g>
+  );
+}
+
 function BehavioralAnomaliesPanel() {
   const [rows, setRows] = useState<BehavioralAnomalyOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  function handleCopied(id: string) {
+    setCopiedId(id);
+    window.setTimeout(() => setCopiedId((prev) => (prev === id ? null : prev)), 1500);
+  }
 
   async function load() {
     setLoading(true);
@@ -184,13 +240,22 @@ function BehavioralAnomaliesPanel() {
       </div>
 
       <div className="p-4">
-        <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1.5">
+        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
           {ANOMALY_LEGEND.map((item) => (
             <div key={item.label} className="flex items-center gap-1.5 text-xs text-slate-500">
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
               {item.label}
             </div>
           ))}
+          {chartData.length > 0 && (
+            <span className="ml-auto text-xs text-slate-600">
+              {copiedId ? (
+                <span className="text-risk-low">Copied {copiedId}</span>
+              ) : (
+                "Hover an account label to copy its ID"
+              )}
+            </span>
+          )}
         </div>
 
         {loading && rows.length === 0 ? (
@@ -213,7 +278,14 @@ function BehavioralAnomaliesPanel() {
               <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" horizontal={false} />
                 <XAxis type="number" domain={[0, 100]} stroke="#64748b" fontSize={10} />
-                <YAxis type="category" dataKey="label" stroke="#64748b" fontSize={10} width={90} />
+                <YAxis
+                  type="category"
+                  dataKey="label"
+                  stroke="#64748b"
+                  fontSize={10}
+                  width={90}
+                  tick={<CopyableYAxisTick chartData={chartData} onCopied={handleCopied} />}
+                />
                 <Tooltip content={<AnomalyTooltip />} cursor={{ fill: "rgba(91, 109, 248, 0.06)" }} />
                 <Bar dataKey="severity_score" radius={[0, 4, 4, 0]} barSize={18}>
                   {chartData.map((row) => (
