@@ -462,6 +462,7 @@ export const AccountLookup: React.FC = () => {
               <tr className="text-left text-slate-500">
                 <th className="py-2">Timestamp</th>
                 <th>Type</th>
+                <th>To</th>
                 <th>Amount</th>
                 <th>Routing</th>
                 <th>Status</th>
@@ -479,6 +480,9 @@ export const AccountLookup: React.FC = () => {
                 >
                   <td className="py-2">{new Date(tx.timestamp).toLocaleString()}</td>
                   <td>{tx.type}</td>
+                  <td className="font-mono text-xs text-slate-300" title={tx.name_dest}>
+                    {truncateAccountId(tx.name_dest)}
+                  </td>
                   <td>{tx.amount.toLocaleString()}</td>
                   <td>{tx.routing_decision ? <RoutingBadge decision={tx.routing_decision} /> : "—"}</td>
                   <td><StatusBadge status={tx.status} /></td>
