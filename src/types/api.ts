@@ -257,6 +257,22 @@ export interface AccountTransactionsResponse {
   transactions: AccountTransactionOut[];
 }
 
+export type BehavioralAnomalyType = "routing_shift" | "amount_spike" | "both";
+
+export interface BehavioralAnomalyOut {
+  account_id: string;
+  anomaly_type: BehavioralAnomalyType;
+  baseline_routing: string;
+  baseline_approve_ratio: number;
+  recent_routing: string;
+  historical_avg_amount: number;
+  recent_amount: number;
+  spike_ratio: number;
+  severity_score: number;
+  transaction_count: number;
+  last_transaction_at: string;
+}
+
 export interface AccountBlockStatusOut {
   account_id: string;
   is_blocked: boolean;

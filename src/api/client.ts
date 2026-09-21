@@ -5,6 +5,7 @@ import type {
   TransactionTimeseriesPoint,
   TransactionListResponse,
   RoutingDecision,
+  BehavioralAnomalyOut,
 } from "@/types/api";
  
 export const TOKEN_STORAGE_KEY = "fraud_admin_access_token";
@@ -127,6 +128,13 @@ export async function fetchTransactions(
 export async function getAccountTransactions(accountId: string, page = 1, pageSize = 25) {
   const { data } = await apiClient.get(`/api/v1/admin/accounts/${accountId}/transactions`, {
     params: { page, page_size: pageSize },
+  });
+  return data;
+}
+
+export async function getBehavioralAnomalies(limit = 15): Promise<BehavioralAnomalyOut[]> {
+  const { data } = await apiClient.get<BehavioralAnomalyOut[]>("/api/v1/admin/behavioral-anomalies", {
+    params: { limit },
   });
   return data;
 }

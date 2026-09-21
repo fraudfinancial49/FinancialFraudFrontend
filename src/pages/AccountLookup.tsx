@@ -1,8 +1,18 @@
-import React, { useState } from "react";
-import { Search, ShieldOff, ShieldCheck as ShieldCheckIcon, Loader2 } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import {
+  Search,
+  ShieldOff,
+  ShieldCheck as ShieldCheckIcon,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+  Activity,
+  CheckCircle2,
+} from "lucide-react";
 import {
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -14,10 +24,11 @@ import {
   blockAccount,
   unblockAccount,
   explainTransaction,
+  getBehavioralAnomalies,
 } from "@/api/client";
 import { RoutingBadge } from "@/components/RiskBadges";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import type { AccountTransactionOut, AccountTransactionsResponse } from "@/types/api";
+import type { AccountTransactionOut, AccountTransactionsResponse, BehavioralAnomalyOut } from "@/types/api";
 
 const STATUS_STYLES: Record<string, string> = {
   approved: "bg-risk-low/15 text-risk-low",
@@ -55,6 +66,167 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
 interface ShapContribution {
   feature: string;
   impact: number;
+}
+
+// ---------------------------------------------------------------------------
+// Right-column panel: accounts whose most recent transaction broke sharply
+// from their own historical baseline (a previously-safe account that just
+// triggered a riskier tier, and/or a sudden multi-x amount spike). Fully
+// independent of the left column's account search -- fetches its own
+// account-agnostic scan on mount.
+// ---------------------------------------------------------------------------
+
+// Colors follow the same severity ordering as the risk router's own tiers
+// (approve < otp_verification < auto_reject < honeypot), using this app's
+// existing risk-* / accent-* design tokens (tailwind.config.js) as literal
+// hex values -- Recharts renders raw SVG and can't consume Tailwind classes.
+const ROUTING_SHIFT_COLORS: Record<string, string> = {
+  otp_verification: "#f5b942", // risk-moderate
+  auto_reject: "#f2545b",      // risk-high
+  honeypot: "#c0203a",         // risk-critical
+};
+const AMOUNT_SPIKE_COLOR = "#12b3a8"; // accent-teal
+const FALLBACK_COLOR = "#5b6df8";     // accent-indigo
+
+function colorForAnomaly(row: BehavioralAnomalyOut): string {
+  if (row.anomaly_type === "amount_spike") return AMOUNT_SPIKE_COLOR;
+  return ROUTING_SHIFT_COLORS[row.recent_routing] ?? FALLBACK_COLOR;
+}
+
+const ANOMALY_LEGEND = [
+  { color: ROUTING_SHIFT_COLORS.otp_verification, label: "Shifted to OTP" },
+  { color: ROUTING_SHIFT_COLORS.auto_reject, label: "Shifted to Auto-Reject" },
+  { color: ROUTING_SHIFT_COLORS.honeypot, label: "Shifted to Honeypot" },
+  { color: AMOUNT_SPIKE_COLOR, label: "Amount spike" },
+];
+
+function truncateAccountId(id: string): string {
+  return id.length > 14 ? `${id.slice(0, 12)}…` : id;
+}
+
+interface AnomalyChartRow extends BehavioralAnomalyOut {
+  label: string;
+}
+
+function AnomalyTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: AnomalyChartRow }> }) {
+  if (!active || !payload || !payload.length) return null;
+  const row = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-vault-700 bg-vault-850 px-3 py-2 text-xs shadow-panel">
+      <p className="font-mono font-semibold text-slate-100">{row.account_id}</p>
+      <div className="mt-1.5 space-y-1 text-slate-400">
+        <p>
+          Baseline: <RoutingBadge decision={row.baseline_routing} />{" "}
+          <span className="text-slate-500">({(row.baseline_approve_ratio * 100).toFixed(0)}% approved historically)</span>
+        </p>
+        <p>
+          Most recent: <RoutingBadge decision={row.recent_routing} />
+        </p>
+        {row.anomaly_type !== "routing_shift" && (
+          <p>
+            Amount: <span className="text-slate-200">{row.historical_avg_amount.toLocaleString()}</span> avg →{" "}
+            <span className="font-semibold text-slate-100">{row.recent_amount.toLocaleString()}</span>{" "}
+            <span className="text-accent-teal">({row.spike_ratio.toFixed(1)}×)</span>
+          </p>
+        )}
+        <p className="text-slate-500">
+          {row.transaction_count} transactions · {new Date(row.last_transaction_at).toLocaleString()}
+        </p>
+      </div>
+      <p className="mt-1.5 border-t border-vault-700/60 pt-1.5 font-semibold text-accent-indigo">
+        Severity {row.severity_score.toFixed(0)}/100
+      </p>
+    </div>
+  );
+}
+
+function BehavioralAnomaliesPanel() {
+  const [rows, setRows] = useState<BehavioralAnomalyOut[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getBehavioralAnomalies(15);
+      setRows(data);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? "Could not load behavioral anomalies.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const chartData: AnomalyChartRow[] = rows.map((r) => ({ ...r, label: truncateAccountId(r.account_id) }));
+  const chartHeight = Math.max(240, chartData.length * 40);
+
+  return (
+    <div className="panel flex flex-col">
+      <div className="panel-header">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+            <Activity className="h-4 w-4 text-accent-indigo" />
+            Behavioral Anomalies
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Accounts whose latest transaction broke sharply from their own history
+          </p>
+        </div>
+        <button onClick={load} disabled={loading} className="btn-secondary shrink-0 py-1 px-2 text-xs">
+          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+          Refresh
+        </button>
+      </div>
+
+      <div className="p-4">
+        <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1.5">
+          {ANOMALY_LEGEND.map((item) => (
+            <div key={item.label} className="flex items-center gap-1.5 text-xs text-slate-500">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+              {item.label}
+            </div>
+          ))}
+        </div>
+
+        {loading && rows.length === 0 ? (
+          <div className="flex h-60 items-center justify-center">
+            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          </div>
+        ) : error ? (
+          <div className="flex items-start gap-2 rounded-lg border border-risk-high/40 bg-risk-high/10 px-3 py-2 text-sm text-risk-high">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        ) : chartData.length === 0 ? (
+          <div className="flex h-60 flex-col items-center justify-center gap-2 text-sm text-slate-500">
+            <CheckCircle2 className="h-5 w-5 text-risk-low" />
+            No unusual behavioral shifts detected right now.
+          </div>
+        ) : (
+          <div style={{ height: chartHeight }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1c2540" horizontal={false} />
+                <XAxis type="number" domain={[0, 100]} stroke="#64748b" fontSize={10} />
+                <YAxis type="category" dataKey="label" stroke="#64748b" fontSize={10} width={90} />
+                <Tooltip content={<AnomalyTooltip />} cursor={{ fill: "rgba(91, 109, 248, 0.06)" }} />
+                <Bar dataKey="severity_score" radius={[0, 4, 4, 0]} barSize={18}>
+                  {chartData.map((row) => (
+                    <Cell key={row.account_id} fill={colorForAnomaly(row)} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export const AccountLookup: React.FC = () => {
@@ -154,9 +326,12 @@ export const AccountLookup: React.FC = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-xl font-bold text-slate-50">Account Lookup</h1>
+    <div className="p-6">
+      <h1 className="mb-6 text-xl font-bold text-slate-50">Account Lookup</h1>
 
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {/* Left half: existing account lookup and details -- unchanged. */}
+        <div className="space-y-6">
       <div className="flex gap-2">
         <input
           value={accountId}
@@ -274,6 +449,13 @@ export const AccountLookup: React.FC = () => {
           )}
         </>
       )}
+        </div>
+
+        {/* Right half: behavioral anomaly scan, independent of the search above. */}
+        <div>
+          <BehavioralAnomaliesPanel />
+        </div>
+      </div>
 
       <ConfirmDialog
         open={confirmAction !== null}
