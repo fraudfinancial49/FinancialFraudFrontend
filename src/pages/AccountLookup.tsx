@@ -104,6 +104,35 @@ function truncateAccountId(id: string): string {
   return id.length > 14 ? `${id.slice(0, 12)}…` : id;
 }
 
+// Plain-HTML equivalent of the chart's CopyableYAxisTick (below), for account
+// IDs shown in ordinary table cells rather than inside an SVG chart. Click
+// copies the full id, with a brief green "copied" flash for confirmation.
+function CopyableAccountId({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleClick(e: React.MouseEvent) {
+    // Table rows this sits in are themselves clickable (row click opens the
+    // SHAP panel) -- without this, copying an id would also trigger that.
+    e.stopPropagation();
+    navigator.clipboard.writeText(id).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    });
+  }
+
+  return (
+    <span
+      onClick={handleClick}
+      title={copied ? "Copied!" : `Click to copy ${id}`}
+      className={`cursor-pointer font-mono text-xs transition-colors ${
+        copied ? "text-risk-low" : "text-slate-300 hover:text-accent-indigo"
+      }`}
+    >
+      {truncateAccountId(id)}
+    </span>
+  );
+}
+
 interface AnomalyChartRow extends BehavioralAnomalyOut {
   label: string;
 }
@@ -480,8 +509,8 @@ export const AccountLookup: React.FC = () => {
                 >
                   <td className="py-2">{new Date(tx.timestamp).toLocaleString()}</td>
                   <td>{tx.type}</td>
-                  <td className="font-mono text-xs text-slate-300" title={tx.name_dest}>
-                    {truncateAccountId(tx.name_dest)}
+                  <td>
+                    <CopyableAccountId id={tx.name_dest} />
                   </td>
                   <td>{tx.amount.toLocaleString()}</td>
                   <td>{tx.routing_decision ? <RoutingBadge decision={tx.routing_decision} /> : "—"}</td>
