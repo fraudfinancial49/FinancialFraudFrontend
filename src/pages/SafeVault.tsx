@@ -29,8 +29,11 @@ interface VaultCase {
   vault_id: string;
   transaction_id: string;
   status: string;
-  reason: string | null;
   created_at: string;
+}
+
+interface VaultCaseDetail extends VaultCase {
+  reason: string | null;
   name_orig: string | null;
   name_dest: string | null;
   type: string | null;
@@ -50,7 +53,9 @@ export const SafeVault: React.FC = () => {
   // handled entirely by the account holder's own step-up OTP flow on the
   // customer portal — admins can look up and confirm a case's status here,
   // but cannot manually generate/verify OTPs or override the outcome.
-  const [focusedVaultId, setFocusedVaultId] = useState<string | null>(null);
+  const [focusedCase, setFocusedCase] = useState<VaultCaseDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   // --- Real-time DB Fetching ---
@@ -71,22 +76,30 @@ export const SafeVault: React.FC = () => {
     fetchVaultLogs();
   }, []);
 
-  const focusedCase = vaultLogs.find((v) => v.vault_id === focusedVaultId) ?? null;
-
-  const handleLookUp = (vault: VaultCase) => {
-    setFocusedVaultId(vault.vault_id);
+  // Look Up ID: pull this case's full details from the database on demand.
+  const handleLookUp = async (vault: VaultCase) => {
+    setDetailLoading(true);
+    setDetailError(null);
     setCopied(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    try {
+      const { data } = await apiClient.get<VaultCaseDetail>(`/api/v1/vault/cases/${vault.vault_id}`);
+      setFocusedCase(data);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err: any) {
+      setDetailError(err?.response?.data?.detail || "Failed to fetch case details from the database.");
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
   const handleBackToAllCases = () => {
-    setFocusedVaultId(null);
+    setFocusedCase(null);
     setCopied(false);
   };
 
   const handleCopyVaultId = () => {
-    if (!focusedVaultId) return;
-    navigator.clipboard.writeText(focusedVaultId);
+    if (!focusedCase) return;
+    navigator.clipboard.writeText(focusedCase.vault_id);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -162,6 +175,13 @@ export const SafeVault: React.FC = () => {
             </button>
           </div>
 
+          {detailError && (
+            <div className="p-4 border-b border-risk-high/40 bg-risk-high/10 text-xs text-risk-high flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              {detailError}
+            </div>
+          )}
+
           {logsError && (
             <div className="p-4 border-b border-risk-high/40 bg-risk-high/10 text-xs text-risk-high flex items-center gap-2">
               <AlertCircle className="h-4 w-4" />
@@ -176,7 +196,6 @@ export const SafeVault: React.FC = () => {
                   <th className="px-4 py-2">Vault ID</th>
                   <th className="px-4 py-2">Transaction ID</th>
                   <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2">Reason</th>
                   <th className="px-4 py-2">Created</th>
                   <th className="px-4 py-2 text-right">Action</th>
                 </tr>
@@ -184,14 +203,14 @@ export const SafeVault: React.FC = () => {
               <tbody>
                 {logsLoading && vaultLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                       <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
                       Querying database...
                     </td>
                   </tr>
                 ) : vaultLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                    <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
                       No Safe Vault cases exist in the database yet.
                     </td>
                   </tr>
@@ -209,11 +228,11 @@ export const SafeVault: React.FC = () => {
                           {STATUS_DISPLAY[v.status] || v.status}
                         </span>
                       </td>
-                      <td className="px-4 py-2 text-slate-400">{v.reason ?? "—"}</td>
                       <td className="px-4 py-2 text-slate-400">{new Date(v.created_at).toLocaleString()}</td>
                       <td className="px-4 py-2 text-right">
                         <button
                           onClick={() => handleLookUp(v)}
+                          disabled={detailLoading}
                           className="inline-flex items-center gap-1 rounded border border-vault-600 bg-vault-800 px-2 py-1 text-xs font-medium text-slate-300 transition hover:border-accent-indigo hover:bg-accent-indigo/20 hover:text-accent-indigo"
                           title="Look up this case's details and Vault ID"
                         >
