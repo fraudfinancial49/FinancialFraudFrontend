@@ -167,11 +167,11 @@ export interface XAINarrativeResponse {
 
 export async function explainTransactionNarrative(
   transactionId: string,
-  payload: { final_risk_score: number; routing_decision: string; contributions: Record<string, number> }
+  _unused?: unknown
 ) {
+  // Backend now reads score/decision/SHAP from the database; no client payload.
   const { data } = await apiClient.post<XAINarrativeResponse>(
-    `/api/v1/transactions/${transactionId}/explain-narrative`,
-    payload
+    `/api/v1/transactions/${transactionId}/explain-narrative`
   );
   return data;
 }
@@ -185,6 +185,11 @@ export async function getHoneypotEvents(sessionId: string) {
 // --- Threat Intelligence: attacker profiles + K-Means clustering ---
 export async function getAttackerProfiles() {
   const { data } = await apiClient.get(`/api/v1/admin/attacker-profiles`);
+  return data;
+}
+
+export async function getAttackerProfile(fingerprint: string) {
+  const { data } = await apiClient.get(`/api/v1/admin/attacker-profiles/${fingerprint}`);
   return data;
 }
 
