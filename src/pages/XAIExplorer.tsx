@@ -172,15 +172,7 @@ export const XAIExplorer: React.FC = () => {
     setNarrativeError(null);
     setNarrative(null);
     try {
-      const contributions: Record<string, number> = {};
-      shapData.forEach((row) => {
-        contributions[row.feature] = row.impact;
-      });
-      const res = await explainTransactionNarrative(selectedTxId, {
-        final_risk_score: selectedTx.final_risk_score,
-        routing_decision: selectedTx.routing_decision,
-        contributions,
-      });
+      const res = await explainTransactionNarrative(selectedTxId);
       setNarrative(res.narrative);
     } catch (err: any) {
       setNarrativeError(
